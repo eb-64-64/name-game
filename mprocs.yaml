@@ -1,0 +1,7 @@
+procs:
+  frontend:
+    cmd: ["bun", "run", "dev"]
+    cwd: "<CONFIG_DIR>/frontend"
+  backend:
+    cmd: ["cargo", "run"]
+    cwd: "<CONFIG_DIR>/backend"

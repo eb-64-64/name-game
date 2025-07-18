@@ -5,6 +5,7 @@
       "name": "frontend",
       "dependencies": {
         "@mateothegreat/svelte5-router": "^2.16.7",
+        "@msgpack/msgpack": "^3.1.2",
         "@tailwindcss/vite": "^4.1.11",
         "tailwindcss": "^4.1.11",
       },
@@ -130,6 +131,8 @@
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.29", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-uw6guiW/gcAGPDhLmd77/6lW8QLeiV5RUTsAX46Db6oLhGaVj4lhnPwb184s1bkc8kdVg/+h988dro8GRDpmYQ=="],
 
     "@mateothegreat/svelte5-router": ["@mateothegreat/svelte5-router@2.16.7", "", { "peerDependencies": { "svelte": "^5.0.0" } }, "sha512-L8JKOrlIdaM8DaDTrQgO1QaG2XixWYlBpoSEtv6kh+gFwBdIKjXeOtOd09FCW9Fx5ZSoXefAkhs+kvPrb3pq/Q=="],
+
+    "@msgpack/msgpack": ["@msgpack/msgpack@3.1.2", "", {}, "sha512-JEW4DEtBzfe8HvUYecLU9e6+XJnKDlUAIve8FvPzF3Kzs6Xo/KuZkZJsDH0wJXl/qEZbeeE7edxDNY3kMs39hQ=="],
 
     "@nodelib/fs.scandir": ["@nodelib/fs.scandir@2.1.5", "", { "dependencies": { "@nodelib/fs.stat": "2.0.5", "run-parallel": "^1.1.9" } }, "sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g=="],
 

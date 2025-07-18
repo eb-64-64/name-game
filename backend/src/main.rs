@@ -1,9 +1,62 @@
-use axum::{Router, extract::WebSocketUpgrade, response::IntoResponse, routing::any};
+use axum::{
+    Router,
+    extract::{
+        WebSocketUpgrade,
+        ws::Message::{self, Binary},
+    },
+    response::IntoResponse,
+    routing::any,
+};
+use futures::{SinkExt, StreamExt};
 use tower_http::trace::TraceLayer;
+use tracing::{error, info};
 use tracing_subscriber::{filter::EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
+use messages::NGMessage;
+
+mod messages;
+
 async fn player_handler(ws: WebSocketUpgrade) -> impl IntoResponse {
-    ws.on_upgrade(async move |_socket| todo!())
+    ws.on_upgrade(async move |socket| {
+        let (mut sender, mut receiver) = socket.split();
+        tokio::spawn(async move {
+            sender
+                .send(Binary(NGMessage::SubmissionTime.encode()))
+                .await
+                .unwrap();
+            sender
+                .send(Binary(NGMessage::Submission(String::from("Emma")).encode()))
+                .await
+                .unwrap();
+            sender
+                .send(Binary(NGMessage::PlayTime.encode()))
+                .await
+                .unwrap();
+            sender
+                .send(Binary(
+                    NGMessage::SubmissionList(vec![String::from("Emma"), String::from("Lydia")])
+                        .encode(),
+                ))
+                .await
+                .unwrap();
+        });
+        tokio::spawn(async move {
+            while let Some(msg) = receiver.next().await {
+                match msg {
+                    Ok(msg) => {
+                        if let Message::Binary(msg) = msg {
+                            let msg = NGMessage::parse(msg).unwrap();
+                            info!("received message: {msg:?}");
+                        }
+                    }
+                    Err(err) => {
+                        error!("got error: {err:?}");
+                        break;
+                    }
+                }
+            }
+        });
+    })
 }
 
 async fn display_handler(ws: WebSocketUpgrade) -> impl IntoResponse {

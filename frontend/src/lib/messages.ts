@@ -3,6 +3,7 @@ import { decode, encode } from '@msgpack/msgpack';
 export enum MessageType {
   SubmissionTime,
   Submission,
+  NumSubmissions,
   PlayTime,
   SubmissionList,
 }
@@ -15,6 +16,11 @@ export type SubmissionTimeMessage = {
 export type SubmissionMessage = {
   type: MessageType.Submission;
   content: string;
+};
+
+export type NumSubmissionsMessage = {
+  type: MessageType.NumSubmissions;
+  content: number;
 };
 
 export type PlayTimeMessage = {
@@ -30,6 +36,7 @@ export type SubmissionListMessage = {
 export type Message =
   | SubmissionTimeMessage
   | SubmissionMessage
+  | NumSubmissionsMessage
   | PlayTimeMessage
   | SubmissionListMessage;
 

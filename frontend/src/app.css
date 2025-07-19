@@ -1,21 +1,40 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 @plugin '@tailwindcss/forms';
 
-@import "@skeletonlabs/skeleton";
-@import "@skeletonlabs/skeleton/optional/presets";
-@import "@skeletonlabs/skeleton/themes/concord";
+@import '@skeletonlabs/skeleton';
+@import '@skeletonlabs/skeleton/optional/presets';
+@import '@skeletonlabs/skeleton/themes/concord';
 
 @source '../node_modules/@skeletonlabs/skeleton-svelte/dist';
 
 @font-face {
-  font-family: "Modak";
-  src: url("/fonts/Modak-Regular.ttf");
+  font-family: 'Chewy';
+  src: url('/fonts/Chewy-Regular.ttf');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'FunnelDisplay';
+  src: url('/fonts/FunnelDisplay-VariableFont_wght.ttf');
   font-weight: 400;
   font-style: normal;
 }
 
 @layer utilities {
-  .font-modak {
-    font-family: Modak;
+  .font-chewy {
+    font-family: Chewy;
   }
+
+  .font-funnel {
+    font-family: FunnelDisplay;
+  }
+}
+
+[data-theme='concord'] {
+  --base-font-family: FunnelDisplay;
+}
+
+#app {
+  height: 100vh;
 }

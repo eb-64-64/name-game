@@ -5,6 +5,7 @@ use tracing::error;
 pub enum NGMessage {
     SubmissionTime,
     Submission(String),
+    NumSubmissions(u8),
     PlayTime,
     SubmissionList(Vec<String>),
 }
@@ -23,7 +24,10 @@ impl NGMessage {
                 }
             }
             1 => Some(NGMessage::Submission(rmp_serde::from_slice(&bytes).ok()?)),
-            2 => {
+            2 => Some(NGMessage::NumSubmissions(
+                rmp_serde::from_slice(&bytes).ok()?,
+            )),
+            3 => {
                 if len != 0 {
                     error!("got nonzero length for PlayTime message type: {len}");
                     None
@@ -31,7 +35,7 @@ impl NGMessage {
                     Some(NGMessage::PlayTime)
                 }
             }
-            3 => Some(NGMessage::SubmissionList(
+            4 => Some(NGMessage::SubmissionList(
                 rmp_serde::from_slice(&bytes).ok()?,
             )),
             _ => {
@@ -48,8 +52,9 @@ impl NGMessage {
             &match self {
                 NGMessage::SubmissionTime => 0u32,
                 NGMessage::Submission(_) => 1,
-                NGMessage::PlayTime => 2,
-                NGMessage::SubmissionList(_) => 3,
+                NGMessage::NumSubmissions(_) => 2,
+                NGMessage::PlayTime => 3,
+                NGMessage::SubmissionList(_) => 4,
             }
             .to_be_bytes(),
         );
@@ -57,6 +62,9 @@ impl NGMessage {
         match self {
             NGMessage::Submission(submission) => {
                 rmp_serde::encode::write(&mut encoded, &submission).unwrap();
+            }
+            NGMessage::NumSubmissions(num) => {
+                rmp_serde::encode::write(&mut encoded, &num).unwrap();
             }
             NGMessage::SubmissionList(submissions) => {
                 rmp_serde::encode::write(&mut encoded, &submissions).unwrap();

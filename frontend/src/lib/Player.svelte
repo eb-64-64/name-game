@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { encodeMessage, MessageType, parseMessage } from './messages';
 
   let enabled = $state(false);
@@ -26,6 +26,12 @@
     });
   });
 
+  onDestroy(() => {
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.close();
+    }
+  });
+
   function onSubmit(event: SubmitEvent) {
     event.preventDefault();
     if (name && enabled) {
@@ -41,9 +47,9 @@
 </script>
 
 <div class="flex h-screen flex-col justify-center">
-  <div class="bg-surface-950 mx-auto w-2/3 min-w-xs space-y-16 rounded-xl p-16">
+  <div class="bg-surface-950 mx-auto w-2/3 min-w-xs rounded-xl p-16">
     <form class="flex flex-col gap-8 text-center" onsubmit={onSubmit}>
-      <h1 class="font-modak text-4xl">Submit a name!</h1>
+      <h1 class="font-chewy text-4xl">The Name Game!</h1>
       <input
         bind:value={name}
         class="input w-full p-2 text-center"

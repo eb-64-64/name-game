@@ -24,21 +24,6 @@ async fn player_handler(ws: WebSocketUpgrade) -> impl IntoResponse {
                 .send(Binary(NGMessage::SubmissionTime.encode()))
                 .await
                 .unwrap();
-            sender
-                .send(Binary(NGMessage::Submission(String::from("Emma")).encode()))
-                .await
-                .unwrap();
-            sender
-                .send(Binary(NGMessage::PlayTime.encode()))
-                .await
-                .unwrap();
-            sender
-                .send(Binary(
-                    NGMessage::SubmissionList(vec![String::from("Emma"), String::from("Lydia")])
-                        .encode(),
-                ))
-                .await
-                .unwrap();
         });
         tokio::spawn(async move {
             while let Some(msg) = receiver.next().await {

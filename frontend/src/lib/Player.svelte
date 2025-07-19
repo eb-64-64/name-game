@@ -48,21 +48,25 @@
 </script>
 
 <div class="flex h-screen flex-col justify-center">
-  <div class="bg-surface-950 mx-auto w-2/3 min-w-xs rounded-xl p-16">
+  <main
+    class="bg-surface-50-950/75 border-surface-100-900/30 mx-auto w-2/3 min-w-xs rounded-xl border p-16"
+  >
     <form class="flex flex-col gap-8 text-center" onsubmit={onSubmit}>
       <h1 class="font-chewy text-4xl">The Name Game!</h1>
       <input
+        autocomplete="off"
         bind:value={name}
         class="input w-full p-2 text-center"
         id="name"
+        name="name"
         placeholder="Name"
         type="text"
       />
       <input
-        class="btn preset-filled-primary-500 w-full p-2"
+        class="btn preset-filled-primary-500 transition-colors-100 w-full p-2"
         disabled={!enabled}
         type="submit"
       />
     </form>
-  </div>
+  </main>
 </div>

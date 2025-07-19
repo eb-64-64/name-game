@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { encodeMessage, MessageType, parseMessage } from './messages';
-  import { fly } from 'svelte/transition';
+  import { fly, scale } from 'svelte/transition';
 
   const url = window.location.host;
 
@@ -65,7 +65,9 @@
 </script>
 
 <div class="flex h-full flex-col">
-  <div class="bg-surface-950 w-full p-8 text-center">
+  <header
+    class="bg-surface-50-950/75 border-surface-100-900/30 w-full border p-8 text-center"
+  >
     <div class="grid grid-cols-3 items-center">
       <div></div>
       <div class="flex flex-col gap-6">
@@ -73,23 +75,23 @@
         <p class="justify-self-center text-3xl">Go to {url}</p>
       </div>
       <button
-        class="btn preset-filled-primary-500 justify-self-end px-4 py-2 text-2xl"
+        class="btn preset-filled-primary-500 transition-colors-100 justify-self-end px-4 py-2 text-2xl"
         disabled={!enabled || numNames === 0}
         onclick={buttonClicked}
       >
         {playing ? 'Next round' : 'Show names'}
       </button>
     </div>
-  </div>
-  <div class="flex min-h-0 grow flex-col overflow-y-auto text-center">
+  </header>
+  <main class="flex min-h-0 grow flex-col overflow-y-auto text-center">
     <div class="flex grow flex-col justify-center p-4">
       {#if playing}
         <ul class="flex flex-col gap-2 overflow-y-scroll text-3xl">
           {#each names as name, index (index)}
-            <li in:fly|global={{ x: -150, opacity: 0, delay: index * 25 }}>
+            <li in:fly|global={{ x: -200, opacity: 0, delay: index * 25 }}>
               <button
                 class={[
-                  'transition-colors duration-50 hover:line-through',
+                  'transition-colors-100 duration-50 hover:line-through',
                   !stillIn[index] && 'guessed',
                 ]}
                 onclick={() => (stillIn[index] = false)}
@@ -100,13 +102,13 @@
           {/each}
         </ul>
       {:else}
-        <p class="text-3xl">
+        <p class="text-3xl" in:scale>
           <span class="font-chewy text-6xl">{numNames}</span><br />
           names submitted
         </p>
       {/if}
     </div>
-  </div>
+  </main>
 </div>
 
 <style>

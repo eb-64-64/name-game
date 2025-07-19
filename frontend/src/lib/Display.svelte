@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { encodeMessage, MessageType, parseMessage } from './messages';
+  import { fly } from 'svelte/transition';
 
   const url = window.location.host;
 
@@ -36,7 +37,6 @@
           names = message.content;
           stillIn = names.map(() => true);
           playing = true;
-          numNames = 0;
           break;
       }
     });
@@ -74,7 +74,7 @@
       </div>
       <button
         class="btn preset-filled-primary-500 justify-self-end px-4 py-2 text-2xl"
-        disabled={!enabled}
+        disabled={!enabled || numNames === 0}
         onclick={buttonClicked}
       >
         {playing ? 'Next round' : 'Show names'}
@@ -86,7 +86,7 @@
       {#if playing}
         <ul class="flex flex-col gap-2 overflow-y-scroll text-3xl">
           {#each names as name, index (index)}
-            <li>
+            <li in:fly|global={{ x: -150, opacity: 0, delay: index * 25 }}>
               <button
                 class={[
                   'transition-colors duration-50 hover:line-through',

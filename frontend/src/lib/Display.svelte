@@ -18,7 +18,7 @@
       enabled = true;
       socket.send(
         encodeMessage({
-          type: MessageType.SubmissionTime,
+          type: MessageType.Submitting,
           content: null,
         }),
       );
@@ -26,13 +26,13 @@
     socket.addEventListener('message', (event) => {
       const message = parseMessage(event.data);
       switch (message.type) {
-        case MessageType.NumSubmissions:
+        case MessageType.NumNames:
           numNames = message.content;
           playing = false;
           names = [];
           stillIn = [];
           break;
-        case MessageType.SubmissionList:
+        case MessageType.Names:
           names = message.content;
           stillIn = names.map(() => true);
           playing = true;
@@ -54,10 +54,12 @@
   function buttonClicked() {
     if (playing) {
       socket.send(
-        encodeMessage({ type: MessageType.SubmissionTime, content: null }),
+        encodeMessage({ type: MessageType.Submitting, content: null }),
       );
     } else {
-      socket.send(encodeMessage({ type: MessageType.PlayTime, content: null }));
+      socket.send(
+        encodeMessage({ type: MessageType.NotSubmitting, content: null }),
+      );
     }
   }
 </script>

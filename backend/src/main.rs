@@ -1,51 +1,176 @@
+use std::sync::{Arc, Mutex};
+
 use axum::{
     Router,
-    extract::{
-        WebSocketUpgrade,
-        ws::Message::{self, Binary},
-    },
+    extract::{State, WebSocketUpgrade, ws::Message},
     response::IntoResponse,
     routing::any,
 };
-use futures::{SinkExt, StreamExt};
+use rand::seq::SliceRandom;
+use tokio::{select, sync::broadcast::Sender};
 use tower_http::trace::TraceLayer;
-use tracing::{error, info};
+use tracing::{error, warn};
 use tracing_subscriber::{filter::EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 use messages::NGMessage;
 
 mod messages;
 
-async fn player_handler(ws: WebSocketUpgrade) -> impl IntoResponse {
-    ws.on_upgrade(async move |socket| {
-        let (mut sender, mut receiver) = socket.split();
-        tokio::spawn(async move {
-            sender
-                .send(Binary(NGMessage::SubmissionTime.encode()))
+#[derive(Clone, Copy, Debug)]
+enum GameState {
+    Submitting,
+    NotSubmitting,
+}
+
+#[derive(Clone, Debug)]
+struct Channels {
+    state_change: Sender<GameState>,
+    name_submission: Sender<String>,
+    cur_state: Arc<Mutex<GameState>>,
+}
+
+async fn player_handler(
+    ws: WebSocketUpgrade,
+    State(channels): State<Channels>,
+) -> impl IntoResponse {
+    let name_sender = channels.name_submission.clone();
+    let mut state_change_receiver = channels.state_change.subscribe();
+    let cur_state = *channels.cur_state.lock().unwrap();
+    ws.on_upgrade(async move |mut socket| {
+        match cur_state {
+            GameState::Submitting => socket
+                .send(Message::Binary(NGMessage::Submitting.encode()))
                 .await
-                .unwrap();
-        });
-        tokio::spawn(async move {
-            while let Some(msg) = receiver.next().await {
-                match msg {
-                    Ok(msg) => {
-                        if let Message::Binary(msg) = msg {
-                            let msg = NGMessage::parse(msg).unwrap();
-                            info!("received message: {msg:?}");
+                .unwrap(),
+            GameState::NotSubmitting => socket
+                .send(Message::Binary(NGMessage::NotSubmitting.encode()))
+                .await
+                .unwrap(),
+        }
+
+        let mut state = cur_state;
+        loop {
+            select! {
+                msg = socket.recv() => {
+                    let msg = match msg {
+                        Some(Ok(Message::Binary(msg))) => msg,
+                        Some(Ok(msg)) => {
+                            warn!("got non-binary message from player: {msg:?}");
+                            continue
+                        }
+                        Some(Err(err)) => {
+                            error!("got error from player: {err:?}");
+                            break
+                        }
+                        None => break,
+                    };
+                    let Some(msg) = NGMessage::parse(msg) else {
+                        warn!("could not parse message from player");
+                        continue
+                    };
+                    let NGMessage::Name(name) = msg else {
+                        warn!("got non-name message from player: {msg:?}");
+                        continue
+                    };
+                    if let GameState::Submitting = state {
+                        match name_sender.send(name) {
+                            Err(_) => {
+                                // swallow the error, because there's not
+                                // really anything we can do
+                                warn!("there is no display to take the name");
+                            }
+                            _ => {}
                         }
                     }
-                    Err(err) => {
-                        error!("got error: {err:?}");
-                        break;
+                }
+                new_state = state_change_receiver.recv() => {
+                    state = new_state.unwrap();
+                    match state {
+                        GameState::Submitting => socket
+                            .send(Message::Binary(NGMessage::Submitting.encode()))
+                            .await
+                            .unwrap(),
+                        GameState::NotSubmitting => socket
+                            .send(Message::Binary(NGMessage::NotSubmitting.encode()))
+                            .await
+                            .unwrap(),
                     }
                 }
             }
-        });
+        }
     })
 }
 
-async fn display_handler(ws: WebSocketUpgrade) -> impl IntoResponse {
-    ws.on_upgrade(async move |_socket| todo!())
+async fn display_handler(
+    ws: WebSocketUpgrade,
+    State(channels): State<Channels>,
+) -> impl IntoResponse {
+    let mut name_receiver = channels.name_submission.subscribe();
+    let state_change_sender = channels.state_change.clone();
+    let cur_state = channels.cur_state.clone();
+    ws.on_upgrade(async move |mut socket| {
+        let mut names = Vec::new();
+        loop {
+            select! {
+                msg = socket.recv() => {
+                    let msg = match msg {
+                        Some(Ok(Message::Binary(msg))) => msg,
+                        Some(Ok(msg)) => {
+                            warn!("got non-binary message from display: {msg:?}");
+                            continue
+                        }
+                        Some(Err(err)) => {
+                            error!("got error from display: {err:?}");
+                            break
+                        }
+                        None => break,
+                    };
+                    let Some(msg) = NGMessage::parse(msg) else {
+                        warn!("could not parse message from display");
+                        continue
+                    };
+                    match msg {
+                        NGMessage::Submitting => {
+                            *cur_state.lock().unwrap() = GameState::Submitting;
+                            if let Err(_) = state_change_sender.send(GameState::Submitting) {
+                                warn!("no players watching for state change");
+                            }
+                            socket.send(
+                                Message::Binary(
+                                    NGMessage::NumNames(names.len() as u8).encode()
+                                )
+                            ).await.unwrap();
+                        }
+                        NGMessage::NotSubmitting => {
+                            *cur_state.lock().unwrap() = GameState::NotSubmitting;
+                            if let Err(_) = state_change_sender.send(GameState::NotSubmitting) {
+                                warn!("no players watching for state change");
+                            }
+                            let mut names = std::mem::take(&mut names);
+                            names.shuffle(&mut rand::rng());
+                            socket.send(
+                                Message::Binary(
+                                    NGMessage::Names(names).encode()
+                                )
+                            ).await.unwrap();
+                        }
+                        _ => {
+                            warn!("got unexpected message from display: {msg:?}");
+                            continue
+                        }
+                    }
+                }
+                new_name = name_receiver.recv() => {
+                    names.push(new_name.unwrap());
+                    socket.send(
+                        Message::Binary(
+                            NGMessage::NumNames(names.len() as u8).encode()
+                        )
+                    ).await.unwrap();
+                }
+            }
+        }
+    })
 }
 
 #[tokio::main]
@@ -59,10 +184,17 @@ async fn main() {
         )
         .init();
 
+    let (state_change, _) = tokio::sync::broadcast::channel(256);
+    let (name_submission, _) = tokio::sync::broadcast::channel(256);
     let app = Router::new()
         .route("/ws/player", any(player_handler))
         .route("/ws/display", any(display_handler))
-        .layer(TraceLayer::new_for_http());
+        .layer(TraceLayer::new_for_http())
+        .with_state(Channels {
+            state_change,
+            name_submission,
+            cur_state: Arc::new(Mutex::new(GameState::NotSubmitting)),
+        });
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
     axum::serve(listener, app.into_make_service())

@@ -12,11 +12,12 @@
     socket.binaryType = 'arraybuffer';
     socket.addEventListener('message', (event) => {
       const message = parseMessage(event.data);
+      console.log(message);
       switch (message.type) {
-        case MessageType.SubmissionTime:
+        case MessageType.Submitting:
           enabled = true;
           break;
-        case MessageType.PlayTime:
+        case MessageType.NotSubmitting:
           enabled = false;
           break;
       }
@@ -37,7 +38,7 @@
     if (name && enabled) {
       socket.send(
         encodeMessage({
-          type: MessageType.Submission,
+          type: MessageType.Name,
           content: name,
         }),
       );

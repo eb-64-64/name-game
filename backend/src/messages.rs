@@ -3,11 +3,11 @@ use tracing::error;
 
 #[derive(Clone, Debug)]
 pub enum NGMessage {
-    SubmissionTime,
-    Submission(String),
-    NumSubmissions(u8),
-    PlayTime,
-    SubmissionList(Vec<String>),
+    Submitting,
+    Name(String),
+    NumNames(u8),
+    NotSubmitting,
+    Names(Vec<String>),
 }
 
 impl NGMessage {
@@ -20,24 +20,20 @@ impl NGMessage {
                     error!("got nonzero length for SubmissionTime message type: {len}");
                     None
                 } else {
-                    Some(NGMessage::SubmissionTime)
+                    Some(NGMessage::Submitting)
                 }
             }
-            1 => Some(NGMessage::Submission(rmp_serde::from_slice(&bytes).ok()?)),
-            2 => Some(NGMessage::NumSubmissions(
-                rmp_serde::from_slice(&bytes).ok()?,
-            )),
+            1 => Some(NGMessage::Name(rmp_serde::from_slice(&bytes).ok()?)),
+            2 => Some(NGMessage::NumNames(rmp_serde::from_slice(&bytes).ok()?)),
             3 => {
                 if len != 0 {
                     error!("got nonzero length for PlayTime message type: {len}");
                     None
                 } else {
-                    Some(NGMessage::PlayTime)
+                    Some(NGMessage::NotSubmitting)
                 }
             }
-            4 => Some(NGMessage::SubmissionList(
-                rmp_serde::from_slice(&bytes).ok()?,
-            )),
+            4 => Some(NGMessage::Names(rmp_serde::from_slice(&bytes).ok()?)),
             _ => {
                 error!("got unknown type: {typ}");
                 None
@@ -50,23 +46,23 @@ impl NGMessage {
 
         encoded[..4].copy_from_slice(
             &match self {
-                NGMessage::SubmissionTime => 0u32,
-                NGMessage::Submission(_) => 1,
-                NGMessage::NumSubmissions(_) => 2,
-                NGMessage::PlayTime => 3,
-                NGMessage::SubmissionList(_) => 4,
+                NGMessage::Submitting => 0u32,
+                NGMessage::Name(_) => 1,
+                NGMessage::NumNames(_) => 2,
+                NGMessage::NotSubmitting => 3,
+                NGMessage::Names(_) => 4,
             }
             .to_be_bytes(),
         );
 
         match self {
-            NGMessage::Submission(submission) => {
+            NGMessage::Name(submission) => {
                 rmp_serde::encode::write(&mut encoded, &submission).unwrap();
             }
-            NGMessage::NumSubmissions(num) => {
+            NGMessage::NumNames(num) => {
                 rmp_serde::encode::write(&mut encoded, &num).unwrap();
             }
-            NGMessage::SubmissionList(submissions) => {
+            NGMessage::Names(submissions) => {
                 rmp_serde::encode::write(&mut encoded, &submissions).unwrap();
             }
             _ => {}

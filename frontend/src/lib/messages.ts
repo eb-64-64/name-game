@@ -1,44 +1,44 @@
 import { decode, encode } from '@msgpack/msgpack';
 
 export enum MessageType {
-  SubmissionTime,
-  Submission,
-  NumSubmissions,
-  PlayTime,
-  SubmissionList,
+  Submitting,
+  Name,
+  NumNames,
+  NotSubmitting,
+  Names,
 }
 
-export type SubmissionTimeMessage = {
-  type: MessageType.SubmissionTime;
+export type SubmittingMessage = {
+  type: MessageType.Submitting;
   content: null;
 };
 
-export type SubmissionMessage = {
-  type: MessageType.Submission;
+export type NameMessage = {
+  type: MessageType.Name;
   content: string;
 };
 
-export type NumSubmissionsMessage = {
-  type: MessageType.NumSubmissions;
+export type NumNamesMessage = {
+  type: MessageType.NumNames;
   content: number;
 };
 
-export type PlayTimeMessage = {
-  type: MessageType.PlayTime;
+export type NotSubmittingMessage = {
+  type: MessageType.NotSubmitting;
   content: null;
 };
 
-export type SubmissionListMessage = {
-  type: MessageType.SubmissionList;
+export type NamesMessage = {
+  type: MessageType.Names;
   content: string[];
 };
 
 export type Message =
-  | SubmissionTimeMessage
-  | SubmissionMessage
-  | NumSubmissionsMessage
-  | PlayTimeMessage
-  | SubmissionListMessage;
+  | SubmittingMessage
+  | NameMessage
+  | NumNamesMessage
+  | NotSubmittingMessage
+  | NamesMessage;
 
 export function parseMessage(message: ArrayBuffer): Message {
   const view = new DataView(message);

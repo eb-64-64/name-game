@@ -1,5 +1,5 @@
 use bytes::{Buf, Bytes};
-use tracing::error;
+use miette::{Context, IntoDiagnostic, bail};
 
 #[derive(Clone, Debug)]
 pub enum NGMessage {
@@ -11,32 +11,41 @@ pub enum NGMessage {
 }
 
 impl NGMessage {
-    pub fn parse(mut bytes: Bytes) -> Option<Self> {
+    pub fn parse(mut bytes: Bytes) -> miette::Result<Self> {
         let typ = bytes.get_u32();
         let len = bytes.get_u32();
         match typ {
             0 => {
                 if len != 0 {
-                    error!("got nonzero length for SubmissionTime message type: {len}");
-                    None
+                    bail!("nonzero length in `Submitting` message: {len}");
                 } else {
-                    Some(NGMessage::Submitting)
+                    Ok(NGMessage::Submitting)
                 }
             }
-            1 => Some(NGMessage::Name(rmp_serde::from_slice(&bytes).ok()?)),
-            2 => Some(NGMessage::NumNames(rmp_serde::from_slice(&bytes).ok()?)),
+            1 => Ok(NGMessage::Name(
+                rmp_serde::from_slice(&bytes)
+                    .into_diagnostic()
+                    .wrap_err("parse content from Name message")?,
+            )),
+            2 => Ok(NGMessage::NumNames(
+                rmp_serde::from_slice(&bytes)
+                    .into_diagnostic()
+                    .wrap_err("parse content from NumNames message")?,
+            )),
             3 => {
                 if len != 0 {
-                    error!("got nonzero length for PlayTime message type: {len}");
-                    None
+                    bail!("nonzero length in NotSubmitting message: {len}");
                 } else {
-                    Some(NGMessage::NotSubmitting)
+                    Ok(NGMessage::NotSubmitting)
                 }
             }
-            4 => Some(NGMessage::Names(rmp_serde::from_slice(&bytes).ok()?)),
+            4 => Ok(NGMessage::Names(
+                rmp_serde::from_slice(&bytes)
+                    .into_diagnostic()
+                    .wrap_err("parse content from Names message")?,
+            )),
             _ => {
-                error!("got unknown type: {typ}");
-                None
+                bail!("message has unknown type: {typ}");
             }
         }
     }

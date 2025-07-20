@@ -6,6 +6,7 @@ use axum::{
     response::IntoResponse,
     routing::any,
 };
+use miette::IntoDiagnostic;
 use rand::seq::SliceRandom;
 use tokio::{select, sync::broadcast::Sender};
 use tower_http::trace::TraceLayer;
@@ -14,7 +15,10 @@ use tracing_subscriber::{filter::EnvFilter, fmt, layer::SubscriberExt, util::Sub
 
 use messages::NGMessage;
 
+use crate::settings::get_settings;
+
 mod messages;
+mod settings;
 
 #[derive(Clone, Copy, Debug)]
 enum GameState {
@@ -174,7 +178,7 @@ async fn display_handler(
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> miette::Result<()> {
     tracing_subscriber::registry()
         .with(fmt::layer())
         .with(
@@ -183,6 +187,10 @@ async fn main() {
                 .add_directive(concat!(env!("CARGO_CRATE_NAME"), "=debug").parse().unwrap()),
         )
         .init();
+
+    let settings = tokio::task::spawn_blocking(|| get_settings())
+        .await
+        .into_diagnostic()??;
 
     let (state_change, _) = tokio::sync::broadcast::channel(256);
     let (name_submission, _) = tokio::sync::broadcast::channel(256);
@@ -196,8 +204,12 @@ async fn main() {
             cur_state: Arc::new(Mutex::new(GameState::NotSubmitting)),
         });
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
+    let listener = tokio::net::TcpListener::bind((settings.host, settings.port))
+        .await
+        .into_diagnostic()?;
     axum::serve(listener, app.into_make_service())
         .await
-        .unwrap()
+        .into_diagnostic()?;
+
+    Ok(())
 }

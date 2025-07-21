@@ -1,28 +1,17 @@
 use futures::stream::unfold;
-use rand::seq::SliceRandom;
-use std::{
-    pin::pin,
-    sync::{Arc, Mutex},
-};
-use tokio::sync::broadcast::{Receiver, Sender};
+use std::{pin::pin, sync::Arc};
 use tokio_stream::StreamExt;
 use tracing::{error, warn};
 
-use crate::{GameState, messages::NGMessage, socket::Socket};
+use crate::{GameState, messages::NGMessage, redis_wrapper::RedisWrapper, socket::Socket};
 
 enum Event {
     Message(miette::Result<Option<NGMessage>>),
-    NewName(String),
+    StateChange(GameState),
+    NewNameCount(usize),
 }
 
-pub async fn handle_display(
-    socket: Socket,
-    state: Arc<Mutex<GameState>>,
-    name_receiver: Receiver<String>,
-    state_change_sender: Sender<GameState>,
-) {
-    let mut names = Vec::new();
-
+pub async fn handle_display(socket: Socket, redis_wrapper: Arc<RedisWrapper>) {
     let (mut socket_sender, socket_receiver) = socket.split();
 
     let a = unfold(socket_receiver, async |mut socket_receiver| {
@@ -31,13 +20,9 @@ pub async fn handle_display(
             socket_receiver,
         ))
     });
-    let b = unfold(name_receiver, async |mut name_receiver| {
-        Some((
-            Event::NewName(name_receiver.recv().await.unwrap()),
-            name_receiver,
-        ))
-    });
-    let mut stream = pin!(a.merge(b));
+    let b = redis_wrapper.name_count_stream().map(Event::NewNameCount);
+    let c = redis_wrapper.state_change_stream().map(Event::StateChange);
+    let mut stream = pin!(a.merge(b).merge(c));
 
     while let Some(event) = stream.next().await {
         match event {
@@ -52,23 +37,13 @@ pub async fn handle_display(
                 };
                 match msg {
                     NGMessage::Submitting => {
-                        *state.lock().unwrap() = GameState::Submitting;
-                        if let Err(_) = state_change_sender.send(GameState::Submitting) {
-                            warn!("no players watching for state change");
-                        }
-                        socket_sender
-                            .send(NGMessage::NumNames(names.len() as u8))
-                            .await
-                            .unwrap();
+                        redis_wrapper.change_state_to_submitting().await.unwrap();
                     }
                     NGMessage::NotSubmitting => {
-                        *state.lock().unwrap() = GameState::NotSubmitting;
-                        if let Err(_) = state_change_sender.send(GameState::NotSubmitting) {
-                            warn!("no players watching for state change");
-                        }
-                        let mut names = std::mem::take(&mut names);
-                        names.shuffle(&mut rand::rng());
-                        socket_sender.send(NGMessage::Names(names)).await.unwrap();
+                        redis_wrapper
+                            .change_state_to_not_submitting()
+                            .await
+                            .unwrap();
                     }
                     _ => {
                         warn!("got unexpected message from display: {msg:?}");
@@ -76,10 +51,16 @@ pub async fn handle_display(
                     }
                 }
             }
-            Event::NewName(new_name) => {
-                names.push(new_name);
+            Event::StateChange(state) => match state {
+                GameState::Submitting => socket_sender.send(NGMessage::NumNames(0)).await.unwrap(),
+                GameState::NotSubmitting => socket_sender
+                    .send(NGMessage::Names(redis_wrapper.names().await.unwrap()))
+                    .await
+                    .unwrap(),
+            },
+            Event::NewNameCount(num_names) => {
                 socket_sender
-                    .send(NGMessage::NumNames(names.len() as u8))
+                    .send(NGMessage::NumNames(num_names))
                     .await
                     .unwrap();
             }

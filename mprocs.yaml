@@ -5,3 +5,6 @@ procs:
   backend:
     cmd: ["cargo", "run"]
     cwd: "<CONFIG_DIR>/backend"
+  valkey:
+    cmd: ["podman", "compose", "up", "--build", "valkey"]
+    cwd: "<CONFIG_DIR>/valkey/local"

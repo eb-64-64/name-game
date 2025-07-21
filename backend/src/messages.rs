@@ -5,7 +5,7 @@ use miette::{Context, IntoDiagnostic, bail};
 pub enum NGMessage {
     Submitting,
     Name(String),
-    NumNames(u8),
+    NumNames(usize),
     NotSubmitting,
     Names(Vec<String>),
 }

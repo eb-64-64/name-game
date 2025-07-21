@@ -1,24 +1,18 @@
-use std::pin::pin;
+use std::{pin::pin, sync::Arc};
 
 use futures::stream::unfold;
-use tokio::sync::broadcast::{Receiver, Sender};
 use tokio_stream::StreamExt;
-use tracing::{error, warn};
+use tracing::error;
 
-use crate::{GameState, messages::NGMessage, socket::Socket};
+use crate::{GameState, messages::NGMessage, redis_wrapper::RedisWrapper, socket::Socket};
 
 enum Event {
     Message(miette::Result<Option<NGMessage>>),
     StateChange(GameState),
 }
 
-pub async fn handle_player(
-    mut socket: Socket,
-    mut state: GameState,
-    name_sender: Sender<String>,
-    state_change_receiver: Receiver<GameState>,
-) {
-    match state {
+pub async fn handle_player(mut socket: Socket, redis_wrapper: Arc<RedisWrapper>) {
+    match redis_wrapper.state() {
         GameState::Submitting => socket.send(NGMessage::Submitting).await.unwrap(),
         GameState::NotSubmitting => socket.send(NGMessage::NotSubmitting).await.unwrap(),
     }
@@ -31,12 +25,7 @@ pub async fn handle_player(
             socket_receiver,
         ))
     });
-    let b = unfold(state_change_receiver, async |mut state_change_receiver| {
-        Some((
-            Event::StateChange(state_change_receiver.recv().await.unwrap()),
-            state_change_receiver,
-        ))
-    });
+    let b = redis_wrapper.state_change_stream().map(Event::StateChange);
     let mut stream = pin!(a.merge(b));
 
     while let Some(event) = stream.next().await {
@@ -54,28 +43,16 @@ pub async fn handle_player(
                     error!("got non-name message from player: {msg:?}");
                     break;
                 };
-                if let GameState::Submitting = state {
-                    match name_sender.send(name) {
-                        Err(_) => {
-                            // swallow the error, because there's not
-                            // really anything we can do
-                            warn!("there is no display to take the name");
-                        }
-                        _ => {}
-                    }
+                if let GameState::Submitting = redis_wrapper.state() {
+                    redis_wrapper.add_name(name).await.unwrap()
                 }
             }
-            Event::StateChange(new_state) => {
-                state = new_state;
-                match state {
-                    GameState::Submitting => {
-                        socket_sender.send(NGMessage::Submitting).await.unwrap()
-                    }
-                    GameState::NotSubmitting => {
-                        socket_sender.send(NGMessage::NotSubmitting).await.unwrap()
-                    }
+            Event::StateChange(new_state) => match new_state {
+                GameState::Submitting => socket_sender.send(NGMessage::Submitting).await.unwrap(),
+                GameState::NotSubmitting => {
+                    socket_sender.send(NGMessage::NotSubmitting).await.unwrap()
                 }
-            }
+            },
         }
     }
 }

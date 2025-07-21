@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::{str::FromStr, sync::Arc};
 
 use axum::{
     Router,
@@ -6,16 +6,16 @@ use axum::{
     response::IntoResponse,
     routing::any,
 };
-use miette::IntoDiagnostic;
-use tokio::sync::broadcast::Sender;
+use miette::{IntoDiagnostic, bail};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{filter::EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::{settings::get_settings, socket::Socket};
+use crate::{redis_wrapper::RedisWrapper, settings::get_settings, socket::Socket};
 
 mod display;
 mod messages;
 mod player;
+mod redis_wrapper;
 mod settings;
 mod socket;
 
@@ -25,46 +25,42 @@ enum GameState {
     NotSubmitting,
 }
 
-#[derive(Clone, Debug)]
-struct Channels {
-    state_change: Sender<GameState>,
-    name_submission: Sender<String>,
-    cur_state: Arc<Mutex<GameState>>,
+impl GameState {
+    fn to_str(&self) -> &'static str {
+        match self {
+            GameState::Submitting => "submitting",
+            GameState::NotSubmitting => "not_submitting",
+        }
+    }
+}
+
+impl FromStr for GameState {
+    type Err = miette::Report;
+
+    fn from_str(s: &str) -> miette::Result<Self> {
+        match s {
+            "submitting" => Ok(GameState::Submitting),
+            "not_submitting" => Ok(GameState::NotSubmitting),
+            _ => bail!("unrecognized game state: {s}"),
+        }
+    }
 }
 
 async fn player_upgrader(
     ws: WebSocketUpgrade,
-    State(channels): State<Channels>,
+    State(redis_wrapper): State<Arc<RedisWrapper>>,
 ) -> impl IntoResponse {
-    let name_sender = channels.name_submission.clone();
-    let state_change_receiver = channels.state_change.subscribe();
-    let cur_state = *channels.cur_state.lock().unwrap();
     ws.on_upgrade(async move |socket| {
-        player::handle_player(
-            Socket::new(socket),
-            cur_state,
-            name_sender,
-            state_change_receiver,
-        )
-        .await;
+        player::handle_player(Socket::new(socket), redis_wrapper.clone()).await;
     })
 }
 
 async fn display_upgrader(
     ws: WebSocketUpgrade,
-    State(channels): State<Channels>,
+    State(redis_wrapper): State<Arc<RedisWrapper>>,
 ) -> impl IntoResponse {
-    let name_receiver = channels.name_submission.subscribe();
-    let state_change_sender = channels.state_change.clone();
-    let cur_state = channels.cur_state.clone();
     ws.on_upgrade(async move |socket| {
-        display::handle_display(
-            Socket::new(socket),
-            cur_state,
-            name_receiver,
-            state_change_sender,
-        )
-        .await;
+        display::handle_display(Socket::new(socket), redis_wrapper.clone()).await;
     })
 }
 
@@ -83,17 +79,11 @@ async fn main() -> miette::Result<()> {
         .await
         .into_diagnostic()??;
 
-    let (state_change, _) = tokio::sync::broadcast::channel(256);
-    let (name_submission, _) = tokio::sync::broadcast::channel(256);
     let app = Router::new()
         .route("/ws/player", any(player_upgrader))
         .route("/ws/display", any(display_upgrader))
         .layer(TraceLayer::new_for_http())
-        .with_state(Channels {
-            state_change,
-            name_submission,
-            cur_state: Arc::new(Mutex::new(GameState::NotSubmitting)),
-        });
+        .with_state(Arc::new(RedisWrapper::new(settings.redis_url).await?));
 
     let listener = tokio::net::TcpListener::bind((settings.host, settings.port))
         .await

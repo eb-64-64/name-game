@@ -1,0 +1,6 @@
+services:
+  valkey:
+    build:
+      dockerfile: Dockerfile-valkey-local
+    ports:
+      - 127.0.0.1:6379:6379

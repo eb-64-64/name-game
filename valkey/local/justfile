@@ -1,0 +1,8 @@
+start:
+    podman compose up --build -d
+restart:
+    podman compose down && podman compose up --build -d
+stop:
+    podman compose down
+valkey:
+    podman compose exec valkey valkey-cli

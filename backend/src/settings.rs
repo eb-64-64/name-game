@@ -1,9 +1,11 @@
 use miette::IntoDiagnostic;
+use secrecy::SecretString;
 
 #[derive(serde::Deserialize, Clone, Debug)]
 pub struct Settings {
     pub host: String,
     pub port: u16,
+    pub redis_url: SecretString,
 }
 
 pub fn get_settings() -> miette::Result<Settings> {

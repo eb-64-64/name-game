@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Router, type RouteConfig } from '@mateothegreat/svelte5-router';
-  import Player from './lib/Player.svelte';
-  import Display from './lib/Display.svelte';
+  import Player from './components/Player.svelte';
+  import Display from './components/Display.svelte';
 
   const routes: RouteConfig[] = [
     {

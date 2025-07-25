@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { encodeMessage, MessageType, parseMessage } from './messages';
+  import { decodeMessage, encodeMessage, MessageType } from '../lib/messages';
+  import { GameState } from '../lib/state';
 
-  let enabled = $state(false);
+  let gameState = $state(GameState.Disconnected);
 
   let name = $state('');
 
@@ -11,19 +12,18 @@
     socket = new WebSocket('/ws/player');
     socket.binaryType = 'arraybuffer';
     socket.addEventListener('message', (event) => {
-      const message = parseMessage(event.data);
-      console.log(message);
+      const message = decodeMessage(event.data);
       switch (message.type) {
-        case MessageType.Submitting:
-          enabled = true;
+        case MessageType.StateSubmitting:
+          gameState = GameState.Submitting;
           break;
-        case MessageType.NotSubmitting:
-          enabled = false;
+        case MessageType.StatePlaying:
+          gameState = GameState.Playing;
           break;
       }
     });
     socket.addEventListener('close', () => {
-      enabled = false;
+      gameState = GameState.Disconnected;
     });
   });
 
@@ -35,10 +35,10 @@
 
   function onSubmit(event: SubmitEvent) {
     event.preventDefault();
-    if (name && enabled) {
+    if (name && gameState === GameState.Submitting) {
       socket.send(
         encodeMessage({
-          type: MessageType.Name,
+          type: MessageType.SubmitName,
           content: name,
         }),
       );
@@ -64,7 +64,7 @@
       />
       <input
         class="btn preset-filled-primary-500 transition-colors-100 w-full p-2"
-        disabled={!enabled}
+        disabled={gameState !== GameState.Submitting}
         type="submit"
       />
     </form>

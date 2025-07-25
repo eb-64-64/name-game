@@ -22,14 +22,14 @@ mod socket;
 #[derive(Clone, Copy, Debug)]
 enum GameState {
     Submitting,
-    NotSubmitting,
+    Playing,
 }
 
 impl GameState {
     fn to_str(&self) -> &'static str {
         match self {
             GameState::Submitting => "submitting",
-            GameState::NotSubmitting => "not_submitting",
+            GameState::Playing => "playing",
         }
     }
 }
@@ -40,7 +40,7 @@ impl FromStr for GameState {
     fn from_str(s: &str) -> miette::Result<Self> {
         match s {
             "submitting" => Ok(GameState::Submitting),
-            "not_submitting" => Ok(GameState::NotSubmitting),
+            "playing" => Ok(GameState::Playing),
             _ => bail!("unrecognized game state: {s}"),
         }
     }

@@ -13,8 +13,8 @@ enum Event {
 
 pub async fn handle_player(mut socket: Socket, redis_wrapper: Arc<RedisWrapper>) {
     match redis_wrapper.state() {
-        GameState::Submitting => socket.send(NGMessage::Submitting).await.unwrap(),
-        GameState::NotSubmitting => socket.send(NGMessage::NotSubmitting).await.unwrap(),
+        GameState::Submitting => socket.send(NGMessage::StateSubmitting).await.unwrap(),
+        GameState::Playing => socket.send(NGMessage::StatePlaying).await.unwrap(),
     }
 
     let (mut socket_sender, socket_receiver) = socket.split();
@@ -39,7 +39,7 @@ pub async fn handle_player(mut socket: Socket, redis_wrapper: Arc<RedisWrapper>)
                         break;
                     }
                 };
-                let NGMessage::Name(name) = msg else {
+                let NGMessage::SubmitName(name) = msg else {
                     error!("got non-name message from player: {msg:?}");
                     break;
                 };
@@ -48,10 +48,11 @@ pub async fn handle_player(mut socket: Socket, redis_wrapper: Arc<RedisWrapper>)
                 }
             }
             Event::StateChange(new_state) => match new_state {
-                GameState::Submitting => socket_sender.send(NGMessage::Submitting).await.unwrap(),
-                GameState::NotSubmitting => {
-                    socket_sender.send(NGMessage::NotSubmitting).await.unwrap()
-                }
+                GameState::Submitting => socket_sender
+                    .send(NGMessage::StateSubmitting)
+                    .await
+                    .unwrap(),
+                GameState::Playing => socket_sender.send(NGMessage::StatePlaying).await.unwrap(),
             },
         }
     }

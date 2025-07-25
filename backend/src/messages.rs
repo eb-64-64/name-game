@@ -1,49 +1,62 @@
 use bytes::{Buf, Bytes};
 use miette::{Context, IntoDiagnostic, bail};
+use serde_bytes::ByteBuf;
 
 #[derive(Clone, Debug)]
 pub enum NGMessage {
-    Submitting,
-    Name(String),
+    SubmitName(String),
     NumNames(usize),
-    NotSubmitting,
-    Names(Vec<String>),
+    StatePlaying,
+    Names(Vec<String>, Vec<u8>),
+    MakeGuess(usize),
+    NameGuessed(usize),
+    StateSubmitting,
 }
 
 impl NGMessage {
     pub fn parse(mut bytes: Bytes) -> miette::Result<Self> {
         let typ = bytes.get_u32();
-        let len = bytes.get_u32();
         match typ {
-            0 => {
-                if len != 0 {
-                    bail!("nonzero length in `Submitting` message: {len}");
-                } else {
-                    Ok(NGMessage::Submitting)
-                }
-            }
-            1 => Ok(NGMessage::Name(
+            0 => Ok(NGMessage::SubmitName(
                 rmp_serde::from_slice(&bytes)
                     .into_diagnostic()
-                    .wrap_err("parse content from Name message")?,
+                    .wrap_err("parse content from SubmitName message")?,
             )),
-            2 => Ok(NGMessage::NumNames(
+            1 => Ok(NGMessage::NumNames(
                 rmp_serde::from_slice(&bytes)
                     .into_diagnostic()
                     .wrap_err("parse content from NumNames message")?,
             )),
-            3 => {
-                if len != 0 {
-                    bail!("nonzero length in NotSubmitting message: {len}");
+            2 => {
+                if bytes.len() != 0 {
+                    bail!("nonzero length in StatePlaying message: {}", bytes.len());
                 } else {
-                    Ok(NGMessage::NotSubmitting)
+                    Ok(NGMessage::StatePlaying)
                 }
             }
-            4 => Ok(NGMessage::Names(
+            3 => {
+                let (names, guesses): (Vec<String>, ByteBuf) = rmp_serde::from_slice(&bytes)
+                    .into_diagnostic()
+                    .wrap_err("parse content from Names message")?;
+                Ok(NGMessage::Names(names, guesses.into_vec()))
+            }
+            4 => Ok(NGMessage::MakeGuess(
                 rmp_serde::from_slice(&bytes)
                     .into_diagnostic()
-                    .wrap_err("parse content from Names message")?,
+                    .wrap_err("parse content from MakeGuess message")?,
             )),
+            5 => Ok(NGMessage::NameGuessed(
+                rmp_serde::from_slice(&bytes)
+                    .into_diagnostic()
+                    .wrap_err("parse content from NameGuessed message")?,
+            )),
+            6 => {
+                if bytes.len() != 0 {
+                    bail!("nonzero length in StateSubmitting message: {}", bytes.len());
+                } else {
+                    Ok(NGMessage::StateSubmitting)
+                }
+            }
             _ => {
                 bail!("message has unknown type: {typ}");
             }
@@ -51,34 +64,32 @@ impl NGMessage {
     }
 
     pub fn encode(&self) -> Bytes {
-        let mut encoded = vec![0; 8];
+        let mut encoded = vec![0; 4];
 
         encoded[..4].copy_from_slice(
             &match self {
-                NGMessage::Submitting => 0u32,
-                NGMessage::Name(_) => 1,
-                NGMessage::NumNames(_) => 2,
-                NGMessage::NotSubmitting => 3,
-                NGMessage::Names(_) => 4,
+                NGMessage::SubmitName(_) => 0u32,
+                NGMessage::NumNames(_) => 1,
+                NGMessage::StatePlaying => 2,
+                NGMessage::Names(_, _) => 3,
+                NGMessage::MakeGuess(_) => 4,
+                NGMessage::NameGuessed(_) => 5,
+                NGMessage::StateSubmitting => 6,
             }
             .to_be_bytes(),
         );
 
         match self {
-            NGMessage::Name(submission) => {
-                rmp_serde::encode::write(&mut encoded, &submission).unwrap();
+            NGMessage::SubmitName(name) => rmp_serde::encode::write(&mut encoded, name).unwrap(),
+            NGMessage::NumNames(num) => rmp_serde::encode::write(&mut encoded, num).unwrap(),
+            NGMessage::Names(names, guesses) => {
+                rmp_serde::encode::write(&mut encoded, &(names, serde_bytes::Bytes::new(&guesses)))
+                    .unwrap()
             }
-            NGMessage::NumNames(num) => {
-                rmp_serde::encode::write(&mut encoded, &num).unwrap();
-            }
-            NGMessage::Names(submissions) => {
-                rmp_serde::encode::write(&mut encoded, &submissions).unwrap();
-            }
+            NGMessage::MakeGuess(index) => rmp_serde::encode::write(&mut encoded, index).unwrap(),
+            NGMessage::NameGuessed(index) => rmp_serde::encode::write(&mut encoded, index).unwrap(),
             _ => {}
         }
-
-        let len = encoded.len() - 8;
-        encoded[4..8].copy_from_slice(&(len as u32).to_be_bytes());
 
         Bytes::from(encoded)
     }

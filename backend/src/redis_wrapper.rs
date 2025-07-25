@@ -206,7 +206,9 @@ impl RedisWrapper {
     }
 
     pub fn name_count_stream(&self) -> impl Stream<Item = usize> {
-        WatchStream::from_changes(self.num_names_receiver.clone())
+        let mut receiver = self.num_names_receiver.clone();
+        receiver.mark_unchanged();
+        WatchStream::from_changes(receiver)
     }
 
     pub async fn add_name(&self, name: String) -> miette::Result<()> {
@@ -255,7 +257,9 @@ impl RedisWrapper {
     }
 
     pub fn state_change_stream(&self) -> impl Stream<Item = GameState> {
-        WatchStream::from_changes(self.state_change_receiver.clone())
+        let mut receiver = self.state_change_receiver.clone();
+        receiver.mark_unchanged();
+        WatchStream::from_changes(receiver)
     }
 
     pub async fn change_state_to_submitting(&self) -> miette::Result<()> {

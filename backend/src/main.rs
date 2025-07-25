@@ -11,6 +11,7 @@ use tower_http::{
     services::{ServeDir, ServeFile},
     trace::TraceLayer,
 };
+use tracing::info;
 use tracing_subscriber::{filter::EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{redis_wrapper::RedisWrapper, settings::get_settings, socket::Socket};
@@ -96,6 +97,7 @@ async fn main() -> miette::Result<()> {
     let listener = tokio::net::TcpListener::bind((settings.host, settings.port))
         .await
         .into_diagnostic()?;
+    info!("Listening on {}", listener.local_addr().into_diagnostic()?);
     axum::serve(listener, app.into_make_service())
         .await
         .into_diagnostic()?;

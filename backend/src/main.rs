@@ -7,7 +7,10 @@ use axum::{
     routing::any,
 };
 use miette::{IntoDiagnostic, bail};
-use tower_http::trace::TraceLayer;
+use tower_http::{
+    services::{ServeDir, ServeFile},
+    trace::TraceLayer,
+};
 use tracing_subscriber::{filter::EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{redis_wrapper::RedisWrapper, settings::get_settings, socket::Socket};
@@ -79,11 +82,16 @@ async fn main() -> miette::Result<()> {
         .await
         .into_diagnostic()??;
 
-    let app = Router::new()
+    let mut app = Router::new()
         .route("/ws/player", any(player_upgrader))
         .route("/ws/display", any(display_upgrader))
         .layer(TraceLayer::new_for_http())
         .with_state(Arc::new(RedisWrapper::new(settings.redis_url).await?));
+    if let Some(serve_dir) = settings.serve_dir {
+        app = app.fallback_service(
+            ServeDir::new(&serve_dir).fallback(ServeFile::new(serve_dir.join("index.html"))),
+        );
+    }
 
     let listener = tokio::net::TcpListener::bind((settings.host, settings.port))
         .await

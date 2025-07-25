@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use miette::IntoDiagnostic;
 use secrecy::SecretString;
 
@@ -6,6 +8,7 @@ pub struct Settings {
     pub host: String,
     pub port: u16,
     pub redis_url: SecretString,
+    pub serve_dir: Option<PathBuf>,
 }
 
 pub fn get_settings() -> miette::Result<Settings> {

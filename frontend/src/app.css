@@ -21,14 +21,9 @@
   font-style: normal;
 }
 
-@layer utilities {
-  .font-chewy {
-    font-family: Chewy;
-  }
-
-  .font-funnel {
-    font-family: FunnelDisplay;
-  }
+@theme {
+  --font-chewy: Chewy;
+  --font-funnel: FunnelDisplay;
 }
 
 [data-theme='concord'] {

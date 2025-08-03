@@ -7,6 +7,8 @@
   import NameList from './NameList.svelte';
   import { uuidsEqual } from '../lib/utils';
   import { X } from '@lucide/svelte';
+  import { clearNames, getNames, setNames } from '../lib/storage';
+  import { scale } from 'svelte/transition';
 
   let connected = $state(true);
   let gameState:
@@ -36,12 +38,13 @@
           gameState = {
             state: GameState.Submitting,
             epoch: message.content,
-            names: [],
+            names: getNames(message.content),
           };
           break;
         case MessageType.NameSubmitted:
           if (gameState.state === GameState.Submitting) {
             gameState.names.push(message.content);
+            setNames(gameState.epoch, gameState.names);
           }
           break;
         case MessageType.NameUnsubmitted:
@@ -49,9 +52,8 @@
             const index = gameState.names.findIndex(([, id]) =>
               uuidsEqual(id, message.content),
             );
-            if (gameState.state === GameState.Submitting) {
-              gameState.names.splice(index, 1);
-            }
+            gameState.names.splice(index, 1);
+            setNames(gameState.epoch, gameState.names);
           }
           break;
         case MessageType.Names:
@@ -60,6 +62,7 @@
             names: message.content[0],
             guesses: message.content[1],
           };
+          clearNames();
           break;
         case MessageType.NameGuessed:
           if (gameState.state === GameState.Playing) {
@@ -133,6 +136,7 @@
         {#each gameState.names as [name, id] (id)}
           <li
             class="bg-primary-500 mx-auto flex w-fit gap-3 rounded-lg px-4 py-1"
+            transition:scale
           >
             <span>{name}</span>
             <button onclick={() => unsubmitName(id)}><X /></button>

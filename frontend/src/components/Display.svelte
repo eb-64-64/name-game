@@ -81,16 +81,16 @@
 
 <div class="flex h-full flex-col">
   <header
-    class="border-surface-500 bg-surface-50-950 sticky top-0 border-b-[0.25px] p-8 text-center"
+    class="border-surface-500 bg-surface-50-950 sticky top-0 border-b-[0.25px] px-8 py-4 text-center"
   >
-    <div class="grid grid-cols-3 items-center">
+    <div class="grid grid-cols-[1fr_3fr_1fr] items-center">
       <div></div>
-      <div class="flex flex-col gap-6">
-        <h1 class="font-chewy text-6xl">The Name Game!</h1>
-        <p class="justify-self-center text-3xl">Go to {url}</p>
+      <div class="flex flex-col gap-2">
+        <h1 class="font-chewy text-5xl">The Name Game!</h1>
+        <p class="justify-self-center text-2xl">Go to {url}</p>
       </div>
       <button
-        class="btn preset-filled-primary-500 transition-colors-100 justify-self-end px-4 py-2 text-2xl"
+        class="btn preset-filled-primary-500 transition-colors-100 justify-self-end px-4 py-2 text-xl"
         disabled={!connected ||
           (gameState.state === GameState.Submitting &&
             gameState.numNames === 0)}

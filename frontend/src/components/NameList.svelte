@@ -21,12 +21,15 @@
 
 <ul
   class={[
-    'mx-auto grid max-w-6xl grid-cols-1 place-items-center gap-y-4 text-3xl',
+    'mx-auto grid grid-cols-1 place-items-center gap-x-32 gap-y-8 text-2xl',
     names.length > 8 && 'md:grid-cols-2',
   ]}
 >
   {#each names as name, index (index)}
-    <li in:fly|global={{ x: -200, opacity: 0, delay: index * 25 }}>
+    <li
+      in:fly|global={{ x: -200, opacity: 0, delay: index * 25 }}
+      class="leading-none"
+    >
       {#if clickability.clickable}
         <button
           class={[...nameClasses(index), 'hover:line-through']}

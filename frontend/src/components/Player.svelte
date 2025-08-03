@@ -46,7 +46,7 @@
           break;
         case MessageType.NameUnsubmitted:
           if (gameState.state === GameState.Submitting) {
-            const index = gameState.names.findIndex(([_, id]) =>
+            const index = gameState.names.findIndex(([, id]) =>
               uuidsEqual(id, message.content),
             );
             if (gameState.state === GameState.Submitting) {
@@ -55,11 +55,10 @@
           }
           break;
         case MessageType.Names:
-          const [names, guesses] = message.content;
           gameState = {
             state: GameState.Playing,
-            names,
-            guesses,
+            names: message.content[0],
+            guesses: message.content[1],
           };
           break;
         case MessageType.NameGuessed:
@@ -106,12 +105,12 @@
     <h1 class="font-chewy text-4xl">The Name Game!</h1>
   </header>
 
-  <main class="mx-auto max-w-3xl divide-y-[0.25px] text-center">
+  <main class="mx-auto w-full divide-y-[0.25px] text-center">
     {#if gameState.state === GameState.Submitting}
       <div
-        class="border-surface-500 bg-(--body-background-color) p-8 dark:bg-(--body-background-color-dark)"
+        class="border-surface-500 mx-auto max-w-3xl bg-(--body-background-color) p-8 dark:bg-(--body-background-color-dark)"
       >
-        <form class="mx-auto max-w-3xl" onsubmit={onSubmit}>
+        <form onsubmit={onSubmit}>
           <div class="input-group grid-cols-[1fr_auto]">
             <input
               autocomplete="off"
@@ -141,7 +140,7 @@
         {/each}
       </ul>
     {:else}
-      <div class="m-4">
+      <div class="m-6 flex flex-col">
         <NameList
           names={gameState.names}
           guesses={gameState.guesses}

@@ -1,11 +1,10 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { MessageType } from '../lib/messages';
+  import { MessageType, type Uuid } from '../lib/messages';
   import { GameState } from '../lib/state';
   import DisconnectionToast from './DisconnectionToast.svelte';
   import { ReconnectingSocket } from '../lib/reconnecting-socket';
   import NameList from './NameList.svelte';
-  import { uuidsEqual } from '../lib/utils';
   import { X } from '@lucide/svelte';
   import { clearNames, getNames, setNames } from '../lib/storage';
   import { scale } from 'svelte/transition';
@@ -15,7 +14,7 @@
     | {
         state: GameState.Submitting;
         epoch: number;
-        names: [string, Uint8Array][];
+        names: [string, Uuid][];
       }
     | { state: GameState.Playing; names: string[]; guesses: boolean[] } =
     $state({
@@ -49,8 +48,8 @@
           break;
         case MessageType.NameUnsubmitted:
           if (gameState.state === GameState.Submitting) {
-            const index = gameState.names.findIndex(([, id]) =>
-              uuidsEqual(id, message.content),
+            const index = gameState.names.findIndex(
+              ([, id]) => id === message.content,
             );
             gameState.names.splice(index, 1);
             setNames(gameState.epoch, gameState.names);
@@ -96,7 +95,7 @@
     }
   }
 
-  function unsubmitName(id: Uint8Array) {
+  function unsubmitName(id: Uuid) {
     socket.send({ type: MessageType.UnsubmitName, content: id });
   }
 </script>

@@ -1,4 +1,5 @@
 import { decode, encode } from '@msgpack/msgpack';
+import { parse, stringify } from 'uuid';
 
 export enum MessageType {
   StateSubmitting,
@@ -16,6 +17,8 @@ export enum MessageType {
   RequestSubmittingState,
 }
 
+export type Uuid = string;
+
 export type StateSubmittingMessage = {
   type: MessageType.StateSubmitting;
   content: number;
@@ -28,17 +31,17 @@ export type SubmitNameMessage = {
 
 export type NameSubmittedMessage = {
   type: MessageType.NameSubmitted;
-  content: [string, Uint8Array];
+  content: [string, Uuid];
 };
 
 export type UnsubmitNameMessage = {
   type: MessageType.UnsubmitName;
-  content: Uint8Array;
+  content: Uuid;
 };
 
 export type NameUnsubmittedMessage = {
   type: MessageType.NameUnsubmitted;
-  content: Uint8Array;
+  content: Uuid;
 };
 
 export type NumNamesMessage = {
@@ -136,13 +139,25 @@ export function decodeMessage(message: ArrayBuffer): Message {
   }
 
   let content = decode(new Uint8Array(message, 4)) as Message['content'];
-  if (type === MessageType.Names) {
-    const [names, guessesBitfield] = content as unknown as [
-      string[],
-      Uint8Array,
-    ];
-    const guesses = bitfieldToBooleanArray(guessesBitfield, names.length);
-    content = [names, guesses];
+  switch (type) {
+    case MessageType.Names: {
+      const [names, guessesBitfield] = content as unknown as [
+        string[],
+        Uint8Array,
+      ];
+      const guesses = bitfieldToBooleanArray(guessesBitfield, names.length);
+      content = [names, guesses];
+      break;
+    }
+    case MessageType.NameSubmitted: {
+      const [name, id] = content as unknown as [string, Uint8Array];
+      content = [name, stringify(id)];
+      break;
+    }
+    case MessageType.UnsubmitName:
+    case MessageType.NameUnsubmitted:
+      content = stringify(content as unknown as Uint8Array);
+      break;
   }
 
   return { type, content };
@@ -165,11 +180,15 @@ export function encodeMessage(message: Message): ArrayBuffer {
         booleanArrayToBitfield(message.content[1]),
       ]);
       break;
-    case MessageType.StateSubmitting:
-    case MessageType.SubmitName:
     case MessageType.NameSubmitted:
+      content = encode([message.content[0], parse(message.content[1])]);
+      break;
     case MessageType.UnsubmitName:
     case MessageType.NameUnsubmitted:
+      content = encode(parse(message.content));
+      break;
+    case MessageType.StateSubmitting:
+    case MessageType.SubmitName:
     case MessageType.NumNames:
     case MessageType.GuessName:
     case MessageType.NameGuessed:

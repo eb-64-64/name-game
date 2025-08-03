@@ -81,7 +81,7 @@
 
 <div class="flex h-full flex-col">
   <header
-    class="bg-surface-50-950/75 border-surface-100-900/30 w-full border p-8 text-center"
+    class="border-surface-500 bg-surface-50-950 sticky top-0 border-b-[0.25px] p-8 text-center"
   >
     <div class="grid grid-cols-3 items-center">
       <div></div>
@@ -104,7 +104,7 @@
       </button>
     </div>
   </header>
-  <main class="flex min-h-0 grow flex-col overflow-y-auto text-center">
+  <main class="flex grow flex-col text-center">
     <div class="flex grow flex-col justify-center p-4">
       {#if gameState.state === GameState.Submitting}
         <p class="text-3xl" in:scale>

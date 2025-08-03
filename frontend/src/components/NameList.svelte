@@ -12,24 +12,30 @@
       | { clickable: false }
       | { clickable: true; onClick: (index: number) => void };
   } = $props();
+
+  const nameClasses = (index: number) => [
+    'transition-colors-100 duration-50',
+    guesses[index] && 'guessed',
+  ];
 </script>
 
-<ul class="flex flex-col gap-2 overflow-y-scroll text-3xl">
+<ul
+  class={[
+    'mx-auto grid max-w-6xl grid-cols-1 place-items-center gap-y-4 text-3xl',
+    names.length > 8 && 'md:grid-cols-2',
+  ]}
+>
   {#each names as name, index (index)}
     <li in:fly|global={{ x: -200, opacity: 0, delay: index * 25 }}>
       {#if clickability.clickable}
         <button
-          class="transition-colors-100 duration-50 hover:line-through"
-          class:guessed={guesses[index]}
+          class={[...nameClasses(index), 'hover:line-through']}
           onclick={() => clickability.onClick(index)}
         >
           {name}
         </button>
       {:else}
-        <span
-          class="transition-colors-100 duration-50"
-          class:guessed={guesses[index]}
-        >
+        <span class={nameClasses(index)}>
           {name}
         </span>
       {/if}

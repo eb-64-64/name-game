@@ -80,7 +80,7 @@ export class ReconnectingSocket {
     });
     this.ws.addEventListener('error', (err) => {
       console.error('WebSocket error:', err);
-      this.ws!.close();
+      this.ws?.close();
     });
   }
 

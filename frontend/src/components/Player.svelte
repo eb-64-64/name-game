@@ -1,18 +1,22 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { decodeMessage, encodeMessage, MessageType } from '../lib/messages';
+  import { MessageType } from '../lib/messages';
   import { GameState } from '../lib/state';
+  import DisconnectionToast from './DisconnectionToast.svelte';
+  import { ReconnectingSocket } from '../lib/reconnecting-socket';
 
-  let gameState = $state(GameState.Disconnected);
+  let connected = $state(true);
+  let gameState = $state(GameState.Submitting);
 
   let name = $state('');
 
-  let socket: WebSocket;
+  let socket: ReconnectingSocket;
   onMount(() => {
-    socket = new WebSocket('/ws/player');
-    socket.binaryType = 'arraybuffer';
-    socket.addEventListener('message', (event) => {
-      const message = decodeMessage(event.data);
+    socket = new ReconnectingSocket('/ws/player');
+    socket.onOpen = () => {
+      connected = true;
+    };
+    socket.onMessage = (message) => {
       switch (message.type) {
         case MessageType.StateSubmitting:
           gameState = GameState.Submitting;
@@ -21,27 +25,23 @@
           gameState = GameState.Playing;
           break;
       }
-    });
-    socket.addEventListener('close', () => {
-      gameState = GameState.Disconnected;
-    });
+    };
+    socket.onClose = () => {
+      connected = false;
+    };
   });
 
   onDestroy(() => {
-    if (socket.readyState === WebSocket.OPEN) {
-      socket.close();
-    }
+    socket.close();
   });
 
   function onSubmit(event: SubmitEvent) {
     event.preventDefault();
     if (name && gameState === GameState.Submitting) {
-      socket.send(
-        encodeMessage({
-          type: MessageType.SubmitName,
-          content: name,
-        }),
-      );
+      socket.send({
+        type: MessageType.SubmitName,
+        content: name,
+      });
       name = '';
     }
   }
@@ -64,9 +64,11 @@
       />
       <input
         class="btn preset-filled-primary-500 transition-colors-100 w-full p-2"
-        disabled={gameState !== GameState.Submitting}
+        disabled={!connected || gameState !== GameState.Submitting}
         type="submit"
       />
     </form>
   </main>
 </div>
+
+<DisconnectionToast {connected} />

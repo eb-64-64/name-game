@@ -1,76 +1,70 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { decodeMessage, encodeMessage, MessageType } from '../lib/messages';
+  import { MessageType } from '../lib/messages';
   import { fly, scale } from 'svelte/transition';
   import { GameState } from '../lib/state';
-  import Spinner from './Spinner.svelte';
+  import { ReconnectingSocket } from '../lib/reconnecting-socket';
+  import DisconnectionToast from './DisconnectionToast.svelte';
 
   const url = window.location.host;
 
-  let state:
-    | { gameState: GameState.Disconnected }
-    | { gameState: GameState.Submitting; numNames: number }
-    | { gameState: GameState.Playing; names: string[]; guesses: boolean[] } =
+  let connected = $state(true);
+  let gameState:
+    | { state: GameState.Submitting; numNames: number }
+    | { state: GameState.Playing; names: string[]; guesses: boolean[] } =
     $state({
-      gameState: GameState.Disconnected,
+      state: GameState.Submitting,
+      numNames: 0,
     });
 
-  let socket: WebSocket;
+  let socket: ReconnectingSocket;
   onMount(() => {
-    socket = new WebSocket('/ws/display');
-    socket.binaryType = 'arraybuffer';
-    socket.addEventListener('message', (event) => {
-      const message = decodeMessage(event.data);
+    socket = new ReconnectingSocket('/ws/display');
+    socket.onOpen = () => {
+      connected = true;
+    };
+    socket.onMessage = (message) => {
       switch (message.type) {
         case MessageType.NumNames:
-          state = {
-            gameState: GameState.Submitting,
+          gameState = {
+            state: GameState.Submitting,
             numNames: message.content,
           };
           break;
         case MessageType.Names:
-          state = {
-            gameState: GameState.Playing,
+          gameState = {
+            state: GameState.Playing,
             names: message.content[0],
             guesses: message.content[1],
           };
           break;
         case MessageType.NameGuessed:
-          if (state.gameState === GameState.Playing) {
-            state.guesses[message.content] = true;
+          if (gameState.state === GameState.Playing) {
+            gameState.guesses[message.content] = true;
           }
           break;
       }
-    });
-    socket.addEventListener(
-      'close',
-      () => (state = { gameState: GameState.Disconnected }),
-    );
+    };
+    socket.onClose = () => {
+      connected = false;
+    };
   });
 
   onDestroy(() => {
-    if (socket.readyState === WebSocket.OPEN) {
-      socket.close();
-    }
+    socket.close();
   });
 
   function buttonClicked() {
-    if (state.gameState === GameState.Playing) {
-      socket.send(
-        encodeMessage({ type: MessageType.StateSubmitting, content: null }),
-      );
-    } else if (state.gameState === GameState.Submitting) {
-      socket.send(
-        encodeMessage({ type: MessageType.StatePlaying, content: null }),
-      );
+    if (gameState.state === GameState.Playing) {
+      socket.send({ type: MessageType.StateSubmitting, content: null });
+    } else if (gameState.state === GameState.Submitting) {
+      socket.send({ type: MessageType.StatePlaying, content: null });
     }
   }
 
   function nameClicked(index: number): () => void {
     return () => {
-      socket.send(
-        encodeMessage({ type: MessageType.MakeGuess, content: index }),
-      );
+      socket.send({ type: MessageType.MakeGuess, content: index });
     };
   }
 </script>
@@ -87,14 +81,12 @@
       </div>
       <button
         class="btn preset-filled-primary-500 transition-colors-100 justify-self-end px-4 py-2 text-2xl"
-        disabled={state.gameState === GameState.Disconnected ||
-          (state.gameState === GameState.Submitting && state.numNames === 0)}
+        disabled={!connected ||
+          (gameState.state === GameState.Submitting &&
+            gameState.numNames === 0)}
         onclick={buttonClicked}
       >
-        {#if state.gameState === GameState.Disconnected}
-          <Spinner width="1em" height="1em" />
-          Loading
-        {:else if state.gameState === GameState.Submitting}
+        {#if gameState.state === GameState.Submitting}
           Show names
         {:else}
           Next round
@@ -104,21 +96,19 @@
   </header>
   <main class="flex min-h-0 grow flex-col overflow-y-auto text-center">
     <div class="flex grow flex-col justify-center p-4">
-      {#if state.gameState === GameState.Disconnected}
-        <Spinner width="150" height="150" />
-      {:else if state.gameState === GameState.Submitting}
+      {#if gameState.state === GameState.Submitting}
         <p class="text-3xl" in:scale>
-          <span class="font-chewy text-6xl">{state.numNames}</span><br />
+          <span class="font-chewy text-6xl">{gameState.numNames}</span><br />
           names submitted
         </p>
       {:else}
         <ul class="flex flex-col gap-2 overflow-y-scroll text-3xl">
-          {#each state.names as name, index (index)}
+          {#each gameState.names as name, index (index)}
             <li in:fly|global={{ x: -200, opacity: 0, delay: index * 25 }}>
               <button
                 class={[
                   'transition-colors-100 duration-50 hover:line-through',
-                  state.guesses[index] && 'guessed',
+                  gameState.guesses[index] && 'guessed',
                 ]}
                 onclick={nameClicked(index)}
               >
@@ -131,6 +121,8 @@
     </div>
   </main>
 </div>
+
+<DisconnectionToast {connected} />
 
 <style>
   .guessed {

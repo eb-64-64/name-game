@@ -27,6 +27,7 @@ const EPOCH_KEY: &'static str = "epoch";
 
 const NUM_NAMES_CHANNEL: &'static str = "numNames";
 const GUESS_CHANNEL: &'static str = "guess";
+const UNGUESS_CHANNEL: &'static str = "unguess";
 const STATE_SUBMITTING_CHANNEL: &'static str = "stateSubmitting";
 const STATE_PLAYING_CHANNEL: &'static str = "statePlaying";
 
@@ -63,6 +64,17 @@ server.call("PUBLISH", "GUESS_CHANNEL", ARGV[1])
 "#
         .trim()
         .replace("GUESS_CHANNEL", GUESS_CHANNEL),
+    )
+});
+
+static UNGUESS_NAME_SCRIPT: LazyLock<Script> = LazyLock::new(|| {
+    Script::new(
+        &r#"
+server.call("SETBIT", KEYS[1], ARGV[1], 0)
+server.call("PUBLISH", "UNGUESS_CHANNEL", ARGV[1])
+"#
+        .trim()
+        .replace("UNGUESS_CHANNEL", UNGUESS_CHANNEL),
     )
 });
 
@@ -117,6 +129,7 @@ pub struct RedisWrapper {
     conn: MultiplexedConnection,
     num_names_receiver: WatchReceiver<usize>,
     guess_receiver: BroadcastReceiver<usize>,
+    unguess_receiver: BroadcastReceiver<usize>,
     state_change_receiver: WatchReceiver<GameState>,
 }
 
@@ -136,6 +149,7 @@ impl RedisWrapper {
         conn.subscribe(&[
             NUM_NAMES_CHANNEL,
             GUESS_CHANNEL,
+            UNGUESS_CHANNEL,
             STATE_SUBMITTING_CHANNEL,
             STATE_PLAYING_CHANNEL,
         ])
@@ -150,6 +164,7 @@ impl RedisWrapper {
         let (num_names_sender, num_names_receiver) = tokio::sync::watch::channel(num_names);
 
         let (guess_sender, guess_receiver) = tokio::sync::broadcast::channel(128);
+        let (unguess_sender, unguess_receiver) = tokio::sync::broadcast::channel(128);
 
         let game_state = match redis::pipe()
             .get(STATE_KEY)
@@ -202,6 +217,18 @@ impl RedisWrapper {
                             "there should be at least one receiver listening to the guess channel",
                         );
                     }
+                    UNGUESS_CHANNEL => {
+                        let Ok(index) = push.data[1].try_from_str::<usize>() else {
+                            warn!(
+                                "got non-numeric unguess index on channel: {:?}",
+                                push.data[1]
+                            );
+                            continue;
+                        };
+                        unguess_sender.send(index).expect(
+                            "there should be at least one receiver listening to the unguess channel",
+                        );
+                    }
                     STATE_SUBMITTING_CHANNEL => {
                         let Ok(epoch) = push.data[1].try_from_str::<u32>() else {
                             warn!(
@@ -233,6 +260,7 @@ impl RedisWrapper {
             conn,
             num_names_receiver,
             guess_receiver,
+            unguess_receiver,
             state_change_receiver,
         })
     }
@@ -288,19 +316,34 @@ impl RedisWrapper {
         Ok((names, guesses))
     }
 
-    pub async fn make_guess(&self, index: usize) -> miette::Result<()> {
+    pub async fn guess_name(&self, index: usize) -> miette::Result<()> {
         GUESS_NAME_SCRIPT
             .key(GUESSES_KEY)
             .arg(index)
             .invoke_async(&mut self.conn.clone())
             .await
             .into_diagnostic()
-            .wrap_err("make guess")
+            .wrap_err("guess name")
+    }
+
+    pub async fn unguess_name(&self, index: usize) -> miette::Result<()> {
+        UNGUESS_NAME_SCRIPT
+            .key(GUESSES_KEY)
+            .arg(index)
+            .invoke_async(&mut self.conn.clone())
+            .await
+            .into_diagnostic()
+            .wrap_err("unguess name")
     }
 
     pub fn guess_stream(&self) -> impl Stream<Item = usize> {
         BroadcastStream::new(self.guess_receiver.resubscribe())
             .map(|res| res.expect("the guess channel's sender should not have been dropped"))
+    }
+
+    pub fn unguess_stream(&self) -> impl Stream<Item = usize> {
+        BroadcastStream::new(self.unguess_receiver.resubscribe())
+            .map(|res| res.expect("the unguess channel's sender should not have been dropped"))
     }
 
     pub fn state(&self) -> GameState {

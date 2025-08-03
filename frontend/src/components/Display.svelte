@@ -44,6 +44,11 @@
             gameState.guesses[message.content] = true;
           }
           break;
+        case MessageType.NameUnguessed:
+          if (gameState.state === GameState.Playing) {
+            gameState.guesses[message.content] = false;
+          }
+          break;
       }
     };
     socket.onClose = () => {
@@ -64,7 +69,13 @@
   }
 
   function nameClicked(index: number) {
-    socket.send({ type: MessageType.GuessName, content: index });
+    if (gameState.state === GameState.Playing) {
+      if (gameState.guesses[index]) {
+        socket.send({ type: MessageType.UnguessName, content: index });
+      } else {
+        socket.send({ type: MessageType.GuessName, content: index });
+      }
+    }
   }
 </script>
 

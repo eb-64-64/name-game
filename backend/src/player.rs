@@ -15,6 +15,7 @@ enum Event {
     Message(miette::Result<Option<NGMessage>>),
     StateChange(GameState),
     NameGuessed(usize),
+    NameUnguessed(usize),
 }
 
 async fn send_state(state: GameState, socket: &mut Sender, redis_wrapper: &RedisWrapper) {
@@ -42,7 +43,8 @@ pub async fn handle_player(socket: Socket, redis_wrapper: Arc<RedisWrapper>) {
     });
     let b = redis_wrapper.state_change_stream().map(Event::StateChange);
     let c = redis_wrapper.guess_stream().map(Event::NameGuessed);
-    let mut stream = pin!(a.merge(b).merge(c));
+    let d = redis_wrapper.unguess_stream().map(Event::NameUnguessed);
+    let mut stream = pin!(a.merge(b).merge(c).merge(d));
 
     while let Some(event) = stream.next().await {
         match event {
@@ -86,6 +88,12 @@ pub async fn handle_player(socket: Socket, redis_wrapper: Arc<RedisWrapper>) {
             Event::NameGuessed(index) => {
                 socket_sender
                     .send(NGMessage::NameGuessed(index))
+                    .await
+                    .unwrap();
+            }
+            Event::NameUnguessed(index) => {
+                socket_sender
+                    .send(NGMessage::NameUnguessed(index))
                     .await
                     .unwrap();
             }

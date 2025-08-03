@@ -9,6 +9,7 @@ enum Event {
     Message(miette::Result<Option<NGMessage>>),
     NewNameCount(usize),
     NameGuessed(usize),
+    NameUnguessed(usize),
     StateChange(GameState),
 }
 
@@ -34,8 +35,9 @@ pub async fn handle_display(mut socket: Socket, redis_wrapper: Arc<RedisWrapper>
     });
     let b = redis_wrapper.name_count_stream().map(Event::NewNameCount);
     let c = redis_wrapper.guess_stream().map(Event::NameGuessed);
-    let d = redis_wrapper.state_change_stream().map(Event::StateChange);
-    let mut stream = pin!(a.merge(b).merge(c).merge(d));
+    let d = redis_wrapper.unguess_stream().map(Event::NameUnguessed);
+    let e = redis_wrapper.state_change_stream().map(Event::StateChange);
+    let mut stream = pin!(a.merge(b).merge(c).merge(d).merge(e));
 
     while let Some(event) = stream.next().await {
         match event {
@@ -53,7 +55,10 @@ pub async fn handle_display(mut socket: Socket, redis_wrapper: Arc<RedisWrapper>
                         redis_wrapper.change_state_to_playing().await.unwrap();
                     }
                     NGMessage::GuessName(index) => {
-                        redis_wrapper.make_guess(index).await.unwrap();
+                        redis_wrapper.guess_name(index).await.unwrap();
+                    }
+                    NGMessage::UnguessName(index) => {
+                        redis_wrapper.unguess_name(index).await.unwrap();
                     }
                     NGMessage::RequestSubmittingState => {
                         redis_wrapper.change_state_to_submitting().await.unwrap();
@@ -73,6 +78,12 @@ pub async fn handle_display(mut socket: Socket, redis_wrapper: Arc<RedisWrapper>
             Event::NameGuessed(index) => {
                 socket_sender
                     .send(NGMessage::NameGuessed(index))
+                    .await
+                    .unwrap();
+            }
+            Event::NameUnguessed(index) => {
+                socket_sender
+                    .send(NGMessage::NameUnguessed(index))
                     .await
                     .unwrap();
             }

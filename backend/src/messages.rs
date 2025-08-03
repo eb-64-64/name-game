@@ -58,7 +58,7 @@ impl NGMessage {
                     .wrap_err("parse content from NumNames message")?,
             )),
             6 => {
-                if bytes.len() != 0 {
+                if !bytes.is_empty() {
                     bail!(
                         "nonzero length in RequestPlayingState message: {}",
                         bytes.len()
@@ -94,7 +94,7 @@ impl NGMessage {
                     .wrap_err("parse content from NameUnguessed message")?,
             )),
             12 => {
-                if bytes.len() != 0 {
+                if !bytes.is_empty() {
                     bail!(
                         "nonzero length in RequestSubmittingState message: {}",
                         bytes.len()
@@ -144,7 +144,7 @@ impl NGMessage {
             NGMessage::NumNames(num) => rmp_serde::encode::write(&mut encoded, num).unwrap(),
             NGMessage::RequestPlayingState => {}
             NGMessage::Names(names, guesses) => {
-                rmp_serde::encode::write(&mut encoded, &(names, serde_bytes::Bytes::new(&guesses)))
+                rmp_serde::encode::write(&mut encoded, &(names, serde_bytes::Bytes::new(guesses)))
                     .unwrap()
             }
             NGMessage::GuessName(index) => rmp_serde::encode::write(&mut encoded, index).unwrap(),

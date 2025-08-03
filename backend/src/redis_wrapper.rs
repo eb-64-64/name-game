@@ -20,16 +20,16 @@ use uuid::Uuid;
 
 use crate::{Epoch, GameState};
 
-const NAMES_KEY: &'static str = "names";
-const GUESSES_KEY: &'static str = "guesses";
-const STATE_KEY: &'static str = "gameState";
-const EPOCH_KEY: &'static str = "epoch";
+const NAMES_KEY: &str = "names";
+const GUESSES_KEY: &str = "guesses";
+const STATE_KEY: &str = "gameState";
+const EPOCH_KEY: &str = "epoch";
 
-const NUM_NAMES_CHANNEL: &'static str = "numNames";
-const GUESS_CHANNEL: &'static str = "guess";
-const UNGUESS_CHANNEL: &'static str = "unguess";
-const STATE_SUBMITTING_CHANNEL: &'static str = "stateSubmitting";
-const STATE_PLAYING_CHANNEL: &'static str = "statePlaying";
+const NUM_NAMES_CHANNEL: &str = "numNames";
+const GUESS_CHANNEL: &str = "guess";
+const UNGUESS_CHANNEL: &str = "unguess";
+const STATE_SUBMITTING_CHANNEL: &str = "stateSubmitting";
+const STATE_PLAYING_CHANNEL: &str = "statePlaying";
 
 static ADD_NAME_SCRIPT: LazyLock<Script> = LazyLock::new(|| {
     Script::new(
@@ -311,7 +311,7 @@ impl RedisWrapper {
 
         // if there are more guesses than names, just get rid of the extra ones
         // at the back
-        guesses.truncate((names.len() + 7) / 8);
+        guesses.truncate(names.len().div_ceil(8));
 
         Ok((names, guesses))
     }

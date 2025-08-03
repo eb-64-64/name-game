@@ -29,5 +29,5 @@ pub fn get_settings() -> miette::Result<Settings> {
         .build()
         .into_diagnostic()?;
 
-    Ok(settings.try_deserialize().into_diagnostic()?)
+    settings.try_deserialize().into_diagnostic()
 }

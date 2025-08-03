@@ -66,7 +66,7 @@ async fn main() -> miette::Result<()> {
         )
         .init();
 
-    let settings = tokio::task::spawn_blocking(|| get_settings())
+    let settings = tokio::task::spawn_blocking(get_settings)
         .await
         .into_diagnostic()??;
 

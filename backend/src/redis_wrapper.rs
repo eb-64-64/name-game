@@ -16,29 +16,46 @@ use secrecy::{ExposeSecret, SecretString};
 use tokio::sync::{broadcast::Receiver as BroadcastReceiver, watch::Receiver as WatchReceiver};
 use tokio_stream::wrappers::{BroadcastStream, WatchStream};
 use tracing::warn;
+use uuid::Uuid;
 
-use crate::GameState;
+use crate::{Epoch, GameState};
 
 const NAMES_KEY: &'static str = "names";
 const GUESSES_KEY: &'static str = "guesses";
 const STATE_KEY: &'static str = "gameState";
+const EPOCH_KEY: &'static str = "epoch";
 
 const NUM_NAMES_CHANNEL: &'static str = "numNames";
 const GUESS_CHANNEL: &'static str = "guess";
-const STATE_CHANGE_CHANNEL: &'static str = "stateChange";
+const STATE_SUBMITTING_CHANNEL: &'static str = "stateSubmitting";
+const STATE_PLAYING_CHANNEL: &'static str = "statePlaying";
 
 static ADD_NAME_SCRIPT: LazyLock<Script> = LazyLock::new(|| {
     Script::new(
         &r#"
-local num_names = server.call("RPUSH", KEYS[1], ARGV[1])
+server.call("HSET", KEYS[1], ARGV[2], ARGV[1])
+local num_names = server.call("HLEN", KEYS[1])
 server.call("PUBLISH", "NUM_NAMES_CHANNEL", num_names)
+return ARGV[2]
 "#
         .trim()
         .replace("NUM_NAMES_CHANNEL", NUM_NAMES_CHANNEL),
     )
 });
 
-static MAKE_GUESS_SCRIPT: LazyLock<Script> = LazyLock::new(|| {
+static REMOVE_NAME_SCRIPT: LazyLock<Script> = LazyLock::new(|| {
+    Script::new(
+        &r#"
+server.call("HDEL", KEYS[1], ARGV[1])
+local num_names = server.call("HLEN", KEYS[1])
+server.call("PUBLISH", "NUM_NAMES_CHANNEL", num_names)
+    "#
+        .trim()
+        .replace("NUM_NAMES_CHANNEL", NUM_NAMES_CHANNEL),
+    )
+});
+
+static GUESS_NAME_SCRIPT: LazyLock<Script> = LazyLock::new(|| {
     Script::new(
         &r#"
 server.call("SETBIT", KEYS[1], ARGV[1], 1)
@@ -48,30 +65,33 @@ server.call("PUBLISH", "GUESS_CHANNEL", ARGV[1])
         .replace("GUESS_CHANNEL", GUESS_CHANNEL),
     )
 });
+
 static CHANGE_STATE_TO_SUBMITTING: LazyLock<Script> = LazyLock::new(|| {
     Script::new(
         &r#"
 -- clear names and guesses
-server.call("DEL", KEYS[2])
 server.call("DEL", KEYS[3])
+server.call("DEL", KEYS[4])
 
 -- set state
 server.call("SET", KEYS[1], "SUBMITTING_STATE")
+local epoch = server.call("INCR", KEYS[2])
 
 -- publish state change
-server.call("PUBLISH", "STATE_CHANGE_CHANNEL", "SUBMITTING_STATE")
+server.call("PUBLISH", "STATE_SUBMITTING_CHANNEL", epoch)
 "#
         .trim()
-        .replace("STATE_CHANGE_CHANNEL", STATE_CHANGE_CHANNEL)
-        .replace("SUBMITTING_STATE", GameState::Submitting.to_str()),
+        .replace("STATE_SUBMITTING_CHANNEL", STATE_SUBMITTING_CHANNEL)
+        .replace("SUBMITTING_STATE", GameState::SUBMITTING),
     )
 });
+
 static CHANGE_STATE_TO_PLAYING: LazyLock<Script> = LazyLock::new(|| {
     Script::new(
         &r#"
 -- shuffle names
 math.randomseed(ARGV[1])
-local names = server.call("LRANGE", KEYS[2], 0, -1)
+local names = server.call("HVALS", KEYS[2])
 for i = 1, #names - 1 do
     local j = math.random(i, #names)
     names[i], names[j] = names[j], names[i]
@@ -83,11 +103,11 @@ server.call("RPUSH", KEYS[2], unpack(names))
 server.call("SET", KEYS[1], "PLAYING_STATE")
 
 -- publish state change
-server.call("PUBLISH", "STATE_CHANGE_CHANNEL", "PLAYING_STATE")
+server.call("PUBLISH", "STATE_PLAYING_CHANNEL", "")
 "#
         .trim()
-        .replace("STATE_CHANGE_CHANNEL", STATE_CHANGE_CHANNEL)
-        .replace("PLAYING_STATE", GameState::Playing.to_str()),
+        .replace("STATE_PLAYING_CHANNEL", STATE_PLAYING_CHANNEL)
+        .replace("PLAYING_STATE", GameState::PLAYING),
     )
 });
 
@@ -113,9 +133,14 @@ impl RedisWrapper {
             .await
             .into_diagnostic()
             .wrap_err("establish connection with redis")?;
-        conn.subscribe(&[NUM_NAMES_CHANNEL, GUESS_CHANNEL, STATE_CHANGE_CHANNEL])
-            .await
-            .into_diagnostic()?;
+        conn.subscribe(&[
+            NUM_NAMES_CHANNEL,
+            GUESS_CHANNEL,
+            STATE_SUBMITTING_CHANNEL,
+            STATE_PLAYING_CHANNEL,
+        ])
+        .await
+        .into_diagnostic()?;
 
         let num_names = conn
             .llen(NAMES_KEY)
@@ -126,9 +151,20 @@ impl RedisWrapper {
 
         let (guess_sender, guess_receiver) = tokio::sync::broadcast::channel(128);
 
-        let game_state = match conn.get(STATE_KEY).await {
-            Ok(Some(s)) => s.parse().wrap_err("get initial game state")?,
-            Ok(None) => GameState::Submitting,
+        let game_state = match redis::pipe()
+            .get(STATE_KEY)
+            .get(EPOCH_KEY)
+            .query_async::<(Option<String>, Option<u32>)>(&mut conn)
+            .await
+        {
+            Ok((Some(state), epoch)) if state == GameState::SUBMITTING => {
+                GameState::Submitting(Epoch(epoch.unwrap_or(0)))
+            }
+            Ok((Some(state), _)) if state == GameState::PLAYING => GameState::Playing,
+            Ok((Some(state), _)) => {
+                bail!("unknown state while getting initial game state: {state}")
+            }
+            Ok((None, epoch)) => GameState::Submitting(Epoch(epoch.unwrap_or(0))),
             Err(err) => {
                 return Err(err)
                     .into_diagnostic()
@@ -166,26 +202,26 @@ impl RedisWrapper {
                             "there should be at least one receiver listening to the guess channel",
                         );
                     }
-                    STATE_CHANGE_CHANNEL => {
-                        let Ok(state) = push.data[1].try_as_str() else {
-                            warn!("got non-string on state change channel: {:?}", push.data[1]);
+                    STATE_SUBMITTING_CHANNEL => {
+                        let Ok(epoch) = push.data[1].try_from_str::<u32>() else {
+                            warn!(
+                                "got non-integer on submitting state change channel: {:?}",
+                                push.data[1]
+                            );
                             continue;
                         };
-                        let Ok(state) = state.parse::<GameState>() else {
-                            warn!("got unknown state on state change channel: {state}");
-                            continue;
-                        };
-                        if let GameState::Submitting = state {
-                            // update number of names without sending a
-                            // notification (no notification is needed, as any
-                            // currently connected displays will get a 0 num
-                            // names packet when the state change is observed)
-                            num_names_sender.send_if_modified(|num| {
-                                *num = 0;
-                                false
-                            });
-                        }
-                        state_change_sender.send_replace(state);
+                        // update number of names without sending a
+                        // notification (no notification is needed, as any
+                        // currently connected displays will get a 0 num names
+                        // packet when the state change is observed)
+                        num_names_sender.send_if_modified(|num| {
+                            *num = 0;
+                            false
+                        });
+                        state_change_sender.send_replace(GameState::Submitting(Epoch(epoch)));
+                    }
+                    STATE_PLAYING_CHANNEL => {
+                        state_change_sender.send_replace(GameState::Playing);
                     }
                     _ => {}
                 }
@@ -211,19 +247,34 @@ impl RedisWrapper {
         WatchStream::from_changes(receiver)
     }
 
-    pub async fn add_name(&self, name: String) -> miette::Result<()> {
+    pub async fn add_name(&self, name: &str) -> miette::Result<Uuid> {
         ADD_NAME_SCRIPT
             .key(NAMES_KEY)
             .arg(name)
+            .arg(Uuid::new_v4())
             .invoke_async(&mut self.conn.clone())
             .await
             .into_diagnostic()
             .wrap_err("add name")
     }
 
+    pub async fn remove_name(&self, id: &Uuid) -> miette::Result<()> {
+        REMOVE_NAME_SCRIPT
+            .key(NAMES_KEY)
+            .arg(id)
+            .invoke_async(&mut self.conn.clone())
+            .await
+            .into_diagnostic()
+            .wrap_err("remove name")
+    }
+
     pub async fn names_and_guesses(&self) -> miette::Result<(Vec<String>, Vec<u8>)> {
-        let (names, mut guesses): (Vec<String>, Vec<u8>) = redis::pipe()
-            .lrange(NAMES_KEY, 0, -1)
+        let mut pipe = redis::pipe();
+        match self.state() {
+            GameState::Submitting(_) => pipe.hvals(NAMES_KEY),
+            GameState::Playing => pipe.lrange(NAMES_KEY, 0, -1),
+        };
+        let (names, mut guesses): (Vec<String>, Vec<u8>) = pipe
             .get(GUESSES_KEY)
             .query_async(&mut self.conn.clone())
             .await
@@ -238,7 +289,7 @@ impl RedisWrapper {
     }
 
     pub async fn make_guess(&self, index: usize) -> miette::Result<()> {
-        MAKE_GUESS_SCRIPT
+        GUESS_NAME_SCRIPT
             .key(GUESSES_KEY)
             .arg(index)
             .invoke_async(&mut self.conn.clone())
@@ -265,6 +316,7 @@ impl RedisWrapper {
     pub async fn change_state_to_submitting(&self) -> miette::Result<()> {
         CHANGE_STATE_TO_SUBMITTING
             .key(STATE_KEY)
+            .key(EPOCH_KEY)
             .key(NAMES_KEY)
             .key(GUESSES_KEY)
             .invoke_async(&mut self.conn.clone())

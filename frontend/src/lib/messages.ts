@@ -1,18 +1,44 @@
 import { decode, encode } from '@msgpack/msgpack';
 
 export enum MessageType {
-  SubmitName,
-  NumNames,
-  StatePlaying,
-  Names,
-  MakeGuess,
-  NameGuessed,
   StateSubmitting,
+  SubmitName,
+  NameSubmitted,
+  UnsubmitName,
+  NameUnsubmitted,
+  NumNames,
+  RequestPlayingState,
+  Names,
+  GuessName,
+  NameGuessed,
+  UnguessName,
+  NameUnguessed,
+  RequestSubmittingState,
 }
+
+export type StateSubmittingMessage = {
+  type: MessageType.StateSubmitting;
+  content: number;
+};
 
 export type SubmitNameMessage = {
   type: MessageType.SubmitName;
   content: string;
+};
+
+export type NameSubmittedMessage = {
+  type: MessageType.NameSubmitted;
+  content: [string, Uint8Array];
+};
+
+export type UnsubmitNameMessage = {
+  type: MessageType.UnsubmitName;
+  content: Uint8Array;
+};
+
+export type NameUnsubmittedMessage = {
+  type: MessageType.NameUnsubmitted;
+  content: Uint8Array;
 };
 
 export type NumNamesMessage = {
@@ -20,8 +46,8 @@ export type NumNamesMessage = {
   content: number;
 };
 
-export type StatePlayingMessage = {
-  type: MessageType.StatePlaying;
+export type RequestPlayingStateMessage = {
+  type: MessageType.RequestPlayingState;
   content: null;
 };
 
@@ -30,8 +56,8 @@ export type NamesMessage = {
   content: [string[], boolean[]];
 };
 
-export type MakeGuessMessage = {
-  type: MessageType.MakeGuess;
+export type GuessNameMessage = {
+  type: MessageType.GuessName;
   content: number;
 };
 
@@ -40,44 +66,66 @@ export type NameGuessedMessage = {
   content: number;
 };
 
-export type StateSubmittingMessage = {
-  type: MessageType.StateSubmitting;
+export type UnguessNameMessage = {
+  type: MessageType.UnguessName;
+  content: number;
+};
+
+export type NameUnguessedMessage = {
+  type: MessageType.NameUnguessed;
+  content: number;
+};
+
+export type RequestSubmittingStateMessage = {
+  type: MessageType.RequestSubmittingState;
   content: null;
 };
 
 export type Message =
+  | StateSubmittingMessage
   | SubmitNameMessage
+  | NameSubmittedMessage
+  | UnsubmitNameMessage
+  | NameUnsubmittedMessage
   | NumNamesMessage
-  | StatePlayingMessage
+  | RequestPlayingStateMessage
   | NamesMessage
-  | MakeGuessMessage
+  | GuessNameMessage
   | NameGuessedMessage
-  | StateSubmittingMessage;
+  | UnguessNameMessage
+  | NameUnguessedMessage
+  | RequestSubmittingStateMessage;
 
-function bitfieldToGuesses(bitfield: Uint8Array, numNames: number): boolean[] {
-  const numBytesToProcess = Math.min(bitfield.length, Math.ceil(numNames / 8));
-  const guesses: boolean[] = new Array(numBytesToProcess * 8);
+function bitfieldToBooleanArray(
+  bitfield: Uint8Array,
+  arrayLength: number,
+): boolean[] {
+  const numBytesToProcess = Math.min(
+    bitfield.length,
+    Math.ceil(arrayLength / 8),
+  );
+  const array: boolean[] = new Array(numBytesToProcess * 8);
 
   for (let i = 0; i < numBytesToProcess; i++) {
     const num = bitfield[i];
     const base = i * 8;
-    guesses[base] = !!(num & 0x80);
-    guesses[base + 1] = !!(num & 0x40);
-    guesses[base + 2] = !!(num & 0x20);
-    guesses[base + 3] = !!(num & 0x10);
-    guesses[base + 4] = !!(num & 0x8);
-    guesses[base + 5] = !!(num & 0x4);
-    guesses[base + 6] = !!(num & 0x2);
-    guesses[base + 7] = !!(num & 0x1);
+    array[base] = !!(num & 0x80);
+    array[base + 1] = !!(num & 0x40);
+    array[base + 2] = !!(num & 0x20);
+    array[base + 3] = !!(num & 0x10);
+    array[base + 4] = !!(num & 0x8);
+    array[base + 5] = !!(num & 0x4);
+    array[base + 6] = !!(num & 0x2);
+    array[base + 7] = !!(num & 0x1);
   }
 
-  if (guesses.length < numNames) {
-    guesses.push(...new Array(numNames).fill(false));
+  if (array.length < arrayLength) {
+    array.push(...new Array(arrayLength - array.length).fill(false));
   } else {
-    guesses.splice(numNames);
+    array.splice(arrayLength);
   }
 
-  return guesses;
+  return array;
 }
 
 export function decodeMessage(message: ArrayBuffer): Message {
@@ -93,17 +141,17 @@ export function decodeMessage(message: ArrayBuffer): Message {
       string[],
       Uint8Array,
     ];
-    const guesses = bitfieldToGuesses(guessesBitfield, names.length);
+    const guesses = bitfieldToBooleanArray(guessesBitfield, names.length);
     content = [names, guesses];
   }
 
   return { type, content };
 }
 
-function guessesToBitfield(guesses: boolean[]): Uint8Array {
-  const bitfield = new Uint8Array(Math.ceil(guesses.length / 8));
-  for (let i = 0; i < guesses.length; i++) {
-    bitfield[Math.floor(i / 8)] |= Number(guesses[i]) << (7 - (i % 8));
+function booleanArrayToBitfield(array: boolean[]): Uint8Array {
+  const bitfield = new Uint8Array(Math.ceil(array.length / 8));
+  for (let i = 0; i < array.length; i++) {
+    bitfield[Math.floor(i / 8)] |= Number(array[i]) << (7 - (i % 8));
   }
   return bitfield;
 }
@@ -114,17 +162,23 @@ export function encodeMessage(message: Message): ArrayBuffer {
     case MessageType.Names:
       content = encode([
         message.content[0],
-        guessesToBitfield(message.content[1]),
+        booleanArrayToBitfield(message.content[1]),
       ]);
       break;
+    case MessageType.StateSubmitting:
     case MessageType.SubmitName:
+    case MessageType.NameSubmitted:
+    case MessageType.UnsubmitName:
+    case MessageType.NameUnsubmitted:
     case MessageType.NumNames:
-    case MessageType.MakeGuess:
+    case MessageType.GuessName:
     case MessageType.NameGuessed:
+    case MessageType.UnguessName:
+    case MessageType.NameUnguessed:
       content = encode(message.content);
       break;
-    case MessageType.StatePlaying:
-    case MessageType.StateSubmitting:
+    case MessageType.RequestSubmittingState:
+    case MessageType.RequestPlayingState:
       content = null;
       break;
   }

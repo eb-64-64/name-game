@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 
 use axum::{
     Router,
@@ -6,7 +6,7 @@ use axum::{
     response::IntoResponse,
     routing::any,
 };
-use miette::{IntoDiagnostic, bail};
+use miette::IntoDiagnostic;
 use tower_http::{
     services::{ServeDir, ServeFile},
     trace::TraceLayer,
@@ -23,31 +23,18 @@ mod redis_wrapper;
 mod settings;
 mod socket;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct Epoch(u32);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum GameState {
-    Submitting,
+    Submitting(Epoch),
     Playing,
 }
 
 impl GameState {
-    fn to_str(&self) -> &'static str {
-        match self {
-            GameState::Submitting => "submitting",
-            GameState::Playing => "playing",
-        }
-    }
-}
-
-impl FromStr for GameState {
-    type Err = miette::Report;
-
-    fn from_str(s: &str) -> miette::Result<Self> {
-        match s {
-            "submitting" => Ok(GameState::Submitting),
-            "playing" => Ok(GameState::Playing),
-            _ => bail!("unrecognized game state: {s}"),
-        }
-    }
+    const SUBMITTING: &'static str = "submitting";
+    const PLAYING: &'static str = "playing";
 }
 
 async fn player_upgrader(

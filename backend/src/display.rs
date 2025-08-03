@@ -14,7 +14,7 @@ enum Event {
 
 pub async fn handle_display(mut socket: Socket, redis_wrapper: Arc<RedisWrapper>) {
     match redis_wrapper.state() {
-        GameState::Submitting => socket
+        GameState::Submitting(_) => socket
             .send(NGMessage::NumNames(redis_wrapper.name_count()))
             .await
             .unwrap(),
@@ -49,13 +49,13 @@ pub async fn handle_display(mut socket: Socket, redis_wrapper: Arc<RedisWrapper>
                     }
                 };
                 match msg {
-                    NGMessage::StatePlaying => {
+                    NGMessage::RequestPlayingState => {
                         redis_wrapper.change_state_to_playing().await.unwrap();
                     }
-                    NGMessage::MakeGuess(index) => {
+                    NGMessage::GuessName(index) => {
                         redis_wrapper.make_guess(index).await.unwrap();
                     }
-                    NGMessage::StateSubmitting => {
+                    NGMessage::RequestSubmittingState => {
                         redis_wrapper.change_state_to_submitting().await.unwrap();
                     }
                     _ => {
@@ -77,7 +77,9 @@ pub async fn handle_display(mut socket: Socket, redis_wrapper: Arc<RedisWrapper>
                     .unwrap();
             }
             Event::StateChange(state) => match state {
-                GameState::Submitting => socket_sender.send(NGMessage::NumNames(0)).await.unwrap(),
+                GameState::Submitting(_) => {
+                    socket_sender.send(NGMessage::NumNames(0)).await.unwrap()
+                }
                 GameState::Playing => {
                     let (names, guesses) = redis_wrapper.names_and_guesses().await.unwrap();
                     socket_sender

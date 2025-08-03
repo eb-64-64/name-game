@@ -4,20 +4,34 @@ use futures::stream::unfold;
 use tokio_stream::StreamExt;
 use tracing::error;
 
-use crate::{GameState, messages::NGMessage, redis_wrapper::RedisWrapper, socket::Socket};
+use crate::{
+    GameState,
+    messages::NGMessage,
+    redis_wrapper::RedisWrapper,
+    socket::{Sender, Socket},
+};
 
 enum Event {
     Message(miette::Result<Option<NGMessage>>),
     StateChange(GameState),
 }
 
-pub async fn handle_player(mut socket: Socket, redis_wrapper: Arc<RedisWrapper>) {
-    match redis_wrapper.state() {
-        GameState::Submitting => socket.send(NGMessage::StateSubmitting).await.unwrap(),
-        GameState::Playing => socket.send(NGMessage::StatePlaying).await.unwrap(),
+async fn send_state(state: GameState, socket: &mut Sender, redis_wrapper: &RedisWrapper) {
+    match state {
+        GameState::Submitting(epoch) => socket
+            .send(NGMessage::StateSubmitting(epoch))
+            .await
+            .unwrap(),
+        GameState::Playing => {
+            let (names, guesses) = redis_wrapper.names_and_guesses().await.unwrap();
+            socket.send(NGMessage::Names(names, guesses)).await.unwrap()
+        }
     }
+}
 
+pub async fn handle_player(socket: Socket, redis_wrapper: Arc<RedisWrapper>) {
     let (mut socket_sender, socket_receiver) = socket.split();
+    send_state(redis_wrapper.state(), &mut socket_sender, &redis_wrapper).await;
 
     let a = unfold(socket_receiver, async |mut socket_receiver| {
         Some((
@@ -39,21 +53,34 @@ pub async fn handle_player(mut socket: Socket, redis_wrapper: Arc<RedisWrapper>)
                         break;
                     }
                 };
-                let NGMessage::SubmitName(name) = msg else {
-                    error!("got non-name message from player: {msg:?}");
-                    break;
-                };
-                if let GameState::Submitting = redis_wrapper.state() {
-                    redis_wrapper.add_name(name).await.unwrap()
+                match msg {
+                    NGMessage::SubmitName(name)
+                        if matches!(redis_wrapper.state(), GameState::Submitting(_)) =>
+                    {
+                        let id = redis_wrapper.add_name(&name).await.unwrap();
+                        socket_sender
+                            .send(NGMessage::NameSubmitted(name, id))
+                            .await
+                            .unwrap()
+                    }
+                    NGMessage::UnsubmitName(id)
+                        if matches!(redis_wrapper.state(), GameState::Submitting(_)) =>
+                    {
+                        redis_wrapper.remove_name(&id).await.unwrap();
+                        socket_sender
+                            .send(NGMessage::NameUnsubmitted(id))
+                            .await
+                            .unwrap()
+                    }
+                    _ => {
+                        error!("unexpected message from player: {msg:?}");
+                        break;
+                    }
                 }
             }
-            Event::StateChange(new_state) => match new_state {
-                GameState::Submitting => socket_sender
-                    .send(NGMessage::StateSubmitting)
-                    .await
-                    .unwrap(),
-                GameState::Playing => socket_sender.send(NGMessage::StatePlaying).await.unwrap(),
-            },
+            Event::StateChange(new_state) => {
+                send_state(new_state, &mut socket_sender, &redis_wrapper).await;
+            }
         }
     }
 }

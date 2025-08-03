@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { MessageType } from '../lib/messages';
-  import { fly, scale } from 'svelte/transition';
+  import { scale } from 'svelte/transition';
   import { GameState } from '../lib/state';
   import { ReconnectingSocket } from '../lib/reconnecting-socket';
   import DisconnectionToast from './DisconnectionToast.svelte';
+  import NameList from './NameList.svelte';
 
   const url = window.location.host;
 
@@ -56,16 +57,14 @@
 
   function buttonClicked() {
     if (gameState.state === GameState.Playing) {
-      socket.send({ type: MessageType.StateSubmitting, content: null });
+      socket.send({ type: MessageType.RequestSubmittingState, content: null });
     } else if (gameState.state === GameState.Submitting) {
-      socket.send({ type: MessageType.StatePlaying, content: null });
+      socket.send({ type: MessageType.RequestPlayingState, content: null });
     }
   }
 
-  function nameClicked(index: number): () => void {
-    return () => {
-      socket.send({ type: MessageType.MakeGuess, content: index });
-    };
+  function nameClicked(index: number) {
+    socket.send({ type: MessageType.GuessName, content: index });
   }
 </script>
 
@@ -102,31 +101,14 @@
           names submitted
         </p>
       {:else}
-        <ul class="flex flex-col gap-2 overflow-y-scroll text-3xl">
-          {#each gameState.names as name, index (index)}
-            <li in:fly|global={{ x: -200, opacity: 0, delay: index * 25 }}>
-              <button
-                class={[
-                  'transition-colors-100 duration-50 hover:line-through',
-                  gameState.guesses[index] && 'guessed',
-                ]}
-                onclick={nameClicked(index)}
-              >
-                {name}
-              </button>
-            </li>
-          {/each}
-        </ul>
+        <NameList
+          names={gameState.names}
+          guesses={gameState.guesses}
+          clickability={{ clickable: true, onClick: nameClicked }}
+        />
       {/if}
     </div>
   </main>
 </div>
 
 <DisconnectionToast {connected} />
-
-<style>
-  .guessed {
-    text-decoration-line: line-through;
-    color: var(--color-gray-500);
-  }
-</style>
